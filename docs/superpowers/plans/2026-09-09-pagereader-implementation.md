@@ -233,7 +233,7 @@ EOF
 
 - [ ] **Step 8: Get the extension into the local Canasta dev instance so PHPUnit has somewhere to run**
 
-Every later task runs `php tests/phpunit/phpunit.php --group PageReader` — that command needs the extension loaded into a real MediaWiki install *now*, not just at final verification (Task 9).
+Every later task runs `docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader` — that command needs the extension loaded into a real MediaWiki install *now*, not just at final verification (Task 9).
 
 **Do not symlink `mediawiki-code/extensions/PageReader` to the working repo** — `mediawiki-code/` is not bind-mounted into the `dev-web-1` container, so a symlink placed there (or anywhere) pointing at an absolute host path outside the container's mounts (e.g. `/home/tom/extensions/reader`) is dangling from the container's point of view and throws `MissingExtensionException` ("cannot be loaded... Unable to open file"), which will crash-loop the whole dev instance on restart. Confirmed the hard way while executing this plan.
 
@@ -249,10 +249,14 @@ Add `PageReader` to the `extensions:` list in `/home/tom/canasta-workspace/dev/c
 ```bash
 git -C /home/tom/canasta-workspace/dev/extensions/PageReader pull
 ```
+
+**One-time container setup, also discovered while executing this plan:**
+- MediaWiki core's PHPUnit suite needs dev Composer dependencies (`wikimedia/testing-access-wrapper`, etc.) that a production-style install skips. Run once: `docker exec dev-web-1 sh -c 'cd /var/www/mediawiki/w && composer install --no-interaction'` (uses the existing `composer.lock`, so it only adds missing dev packages — it does not change any already-installed production package version).
+- The `@group Database` tests below clone every registered extension's DB tables into TEMPORARY tables by default, and Cargo's tables have FULLTEXT indexes that MySQL/MariaDB refuses to put on a TEMPORARY InnoDB table (`Error 1796`). This is unrelated to PageReader's own code — it's the shared dev database's Cargo schema. Fix: `PHPUNIT_USE_NORMAL_TABLES=1` (an environment variable read by `MediaWikiIntegrationTestCase::getCliArg()`, not a CLI flag) forces non-temporary test tables instead.
+
 Then run PHPUnit as:
 ```bash
-cd /home/tom/canasta-workspace/dev/mediawiki-code
-php tests/phpunit/phpunit.php --group PageReader
+docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader
 ```
 
 ---
@@ -285,6 +289,7 @@ use MediaWikiIntegrationTestCase;
 /**
  * @covers \MediaWiki\Extension\PageReader\PageReaderEligibility
  * @group PageReader
+ * @group Database
  */
 class PageReaderEligibilityTest extends MediaWikiIntegrationTestCase {
 
@@ -419,7 +424,7 @@ class PageReaderEligibilityTest extends MediaWikiIntegrationTestCase {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `php tests/phpunit/phpunit.php --group PageReader` (from the MediaWiki root, with `extensions/PageReader` symlinked or copied in — see Task 9 for the local Canasta path)
+Run: `docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader` (per Task 1 Step 8: dev clone synced via `git pull`, run inside the container)
 
 Expected: FAIL — `Class "MediaWiki\Extension\PageReader\PageReaderEligibility" not found`
 
@@ -536,7 +541,7 @@ class PageReaderEligibility {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `php tests/phpunit/phpunit.php --group PageReader`
+Run: `docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader`
 
 Expected: `OK (11 tests, ...)`, all green.
 
@@ -660,7 +665,7 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `php tests/phpunit/phpunit.php --group PageReader`
+Run: `docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader`
 
 Expected: FAIL — `Class "MediaWiki\Extension\PageReader\PageReaderConfigService" not found`
 
@@ -836,7 +841,7 @@ class PageReaderConfigService {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `php tests/phpunit/phpunit.php --group PageReader`
+Run: `docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader`
 
 Expected: `OK (16 tests, ...)`, all green.
 
@@ -983,7 +988,7 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `php tests/phpunit/phpunit.php --group PageReader`
+Run: `docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader`
 
 Expected: FAIL — `Class "MediaWiki\Extension\PageReader\Hooks" not found` (and/or the magic word `__NOPAGEREADER__` not recognized, since nothing registers it yet).
 
@@ -1137,7 +1142,7 @@ Add to `extension.json`:
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `php tests/phpunit/phpunit.php --group PageReader`
+Run: `docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader`
 
 Expected: `OK (20 tests, ...)`, all green.
 
@@ -1749,8 +1754,7 @@ EOF
 - [ ] **Step 1: Run the full PHPUnit suite one more time from a clean state**
 
 ```bash
-cd /home/tom/canasta-workspace/dev/mediawiki-code
-php tests/phpunit/phpunit.php --group PageReader
+docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader
 ```
 Expected: all tests from Tasks 2–4 pass (`OK (20 tests, ...)`).
 
