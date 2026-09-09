@@ -231,16 +231,25 @@ EOF
 )"
 ```
 
-- [ ] **Step 8: Symlink into the local Canasta dev instance so PHPUnit has somewhere to run**
+- [ ] **Step 8: Get the extension into the local Canasta dev instance so PHPUnit has somewhere to run**
 
-Every later task runs `php tests/phpunit/phpunit.php --group PageReader` — that command needs the extension loaded into a real MediaWiki install *now*, not just at final verification (Task 9). Do this once, here:
+Every later task runs `php tests/phpunit/phpunit.php --group PageReader` — that command needs the extension loaded into a real MediaWiki install *now*, not just at final verification (Task 9).
+
+**Do not symlink `mediawiki-code/extensions/PageReader` to the working repo** — `mediawiki-code/` is not bind-mounted into the `dev-web-1` container, so a symlink placed there (or anywhere) pointing at an absolute host path outside the container's mounts (e.g. `/home/tom/extensions/reader`) is dangling from the container's point of view and throws `MissingExtensionException` ("cannot be loaded... Unable to open file"), which will crash-loop the whole dev instance on restart. Confirmed the hard way while executing this plan.
+
+WantedSort and NearMe are each a **separate, independent git clone** living under `/home/tom/canasta-workspace/dev/extensions/<Name>` — that directory *is* bind-mounted into the container (as `/var/www/mediawiki/w/user-extensions`). Follow the same pattern:
 
 ```bash
-ln -sfn /home/tom/extensions/reader \
-  /home/tom/canasta-workspace/dev/mediawiki-code/extensions/PageReader
+git clone /home/tom/extensions/reader /home/tom/canasta-workspace/dev/extensions/PageReader
 ```
 
-Add `wfLoadExtension( 'PageReader' );` to the dev instance's LocalSettings (or `config/wikis.yaml`, matching how WantedSort/NearMe are enabled there), restart the dev instance, and confirm `Special:Version` lists **PageReader** with no fatal. From here on, every task's PHPUnit command is run as:
+Add `PageReader` to the `extensions:` list in `/home/tom/canasta-workspace/dev/config/settings/global/settings.yaml` (alphabetically, matching the existing entries), run `canasta restart -i dev`, poll `docker inspect --format='{{.State.Health.Status}}' dev-web-1` until `healthy`, then confirm `Special:Version` lists **PageReader** with no fatal.
+
+**Because the dev copy is a separate clone, it does not see new commits automatically.** Before running PHPUnit in every later task (Tasks 2–4, 9), first sync it:
+```bash
+git -C /home/tom/canasta-workspace/dev/extensions/PageReader pull
+```
+Then run PHPUnit as:
 ```bash
 cd /home/tom/canasta-workspace/dev/mediawiki-code
 php tests/phpunit/phpunit.php --group PageReader
