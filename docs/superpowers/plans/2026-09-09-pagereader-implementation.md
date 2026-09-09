@@ -597,6 +597,10 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 
 	private function baseConfig( array $overrides = [] ): void {
 		$this->overrideConfigValues( $overrides + [
+			// editPage() below triggers a real page save; without this, the
+			// deferred CDN purge tries a real HTTP request to the (blocked)
+			// test network and fails the test with an unrelated error.
+			'CdnServers' => [],
 			'PageReaderConfigPage' => 'PageReader-config',
 			'PageReaderNamespaces' => [ 1004 ],
 			'PageReaderTitlePrefixes' => [ 'Kids:' ],
@@ -905,6 +909,10 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 
 	private function overridePageReaderConfig( array $overrides = [] ): void {
 		$this->overrideConfigValues( $overrides + [
+			// editPage() below triggers a real page save; without this, the
+			// deferred CDN purge tries a real HTTP request to the (blocked)
+			// test network and fails the test with an unrelated error.
+			'CdnServers' => [],
 			'PageReaderEnabled' => true,
 			'PageReaderActions' => [ 'view' ],
 			'PageReaderContentModels' => [ 'wikitext' ],
