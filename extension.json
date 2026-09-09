@@ -16,6 +16,22 @@
 	"MessagesDirs": {
 		"PageReader": [ "i18n" ]
 	},
+	"ExtensionMessagesFiles": {
+		"PageReaderMagic": "PageReader.i18n.magic.php"
+	},
+	"HookHandlers": {
+		"main": {
+			"class": "MediaWiki\\Extension\\PageReader\\Hooks",
+			"services": [ "PageReader.ConfigService" ]
+		}
+	},
+	"Hooks": {
+		"BeforePageDisplay": "main",
+		"GetDoubleUnderscoreIDs": "main"
+	},
+	"ServiceWiringFiles": [
+		"includes/ServiceWiring.php"
+	],
 	"config": {
 		"PageReaderEnabled": {
 			"value": true,

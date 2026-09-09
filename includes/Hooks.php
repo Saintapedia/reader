@@ -1,0 +1,78 @@
+<?php
+
+declare( strict_types = 1 );
+
+namespace MediaWiki\Extension\PageReader;
+
+use MediaWiki\Config\HashConfig;
+use MediaWiki\Hook\GetDoubleUnderscoreIDsHook;
+use MediaWiki\MediaWikiServices;
+use MediaWiki\Output\Hook\BeforePageDisplayHook;
+use MediaWiki\Output\OutputPage;
+use Skin;
+
+class Hooks implements BeforePageDisplayHook, GetDoubleUnderscoreIDsHook {
+
+	private PageReaderConfigService $configService;
+
+	public function __construct( PageReaderConfigService $configService ) {
+		$this->configService = $configService;
+	}
+
+	public function onGetDoubleUnderscoreIDs( &$doubleUnderscoreIDs ) {
+		$doubleUnderscoreIDs[] = 'nopagereader';
+	}
+
+	public function onBeforePageDisplay( $out, $skin ): void {
+		$title = $out->getTitle();
+		if ( $title === null ) {
+			return;
+		}
+
+		$mainConfig = $out->getConfig();
+		if ( !$mainConfig->get( 'PageReaderEnabled' ) ) {
+			return;
+		}
+
+		// Resolve the on-wiki overlay once. This is the config that must
+		// govern eligibility itself (namespaces/prefixes/pages/excluded/
+		// loadEverywhere) — not just JS-side content-targeting — otherwise
+		// editing MediaWiki:PageReader-config would silently do nothing.
+		$effective = $this->configService->getEffectiveConfig( $mainConfig );
+
+		$eligibilityConfig = new HashConfig( [
+			'PageReaderEnabled' => true,
+			'PageReaderActions' => $mainConfig->get( 'PageReaderActions' ),
+			'PageReaderContentModels' => $mainConfig->get( 'PageReaderContentModels' ),
+			'PageReaderIncludeTalk' => $mainConfig->get( 'PageReaderIncludeTalk' ),
+			'PageReaderNamespaces' => $effective['namespaces'],
+			'PageReaderTitlePrefixes' => $effective['titlePrefixes'],
+			'PageReaderPages' => $effective['pages'],
+			'PageReaderExcludedNamespaces' => $effective['excludedNamespaces'],
+			'PageReaderExcludedPages' => $effective['excludedPages'],
+			'PageReaderLoadEverywhere' => $effective['loadEverywhere'],
+		] );
+
+		$action = $out->getRequest()->getRawVal( 'action', 'view' );
+
+		if ( !PageReaderEligibility::isEligible( $title, $action, $eligibilityConfig ) ) {
+			return;
+		}
+
+		// DB-backed opt-out check, deliberately run only for pages that
+		// already passed the cheap, in-memory eligibility check above.
+		$props = MediaWikiServices::getInstance()->getPageProps()
+			->getProperties( $title, 'nopagereader' );
+		if ( $props !== [] ) {
+			return;
+		}
+
+		$out->addModules( 'ext.pageReader' );
+		$out->addJsConfigVars( [
+			'wgPageReaderContentClass' => $effective['contentClass'],
+			'wgPageReaderContentSelector' => $effective['contentSelector'],
+			'wgPageReaderSkipSelectors' => $effective['skipSelectors'],
+			'wgPageReaderButtonPlacement' => $effective['buttonPlacement'],
+		] );
+	}
+}
