@@ -1,0 +1,8 @@
+{
+	"@metadata": {
+		"authors": [ "Saintapedia contributors" ]
+	},
+	"pagereader-desc": "Adds a configurable, conditionally-loaded read-aloud button (\"Saintapedia Reader\")",
+	"pagereader-button-label": "Read this page aloud",
+	"pagereader-button-label-stop": "Stop reading"
+}

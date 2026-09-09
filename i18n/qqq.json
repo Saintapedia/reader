@@ -1,0 +1,8 @@
+{
+	"@metadata": {
+		"authors": [ "Saintapedia contributors" ]
+	},
+	"pagereader-desc": "{{desc|name=PageReader|url=https://github.com/Saintapedia/reader}}",
+	"pagereader-button-label": "Label on the read-aloud button before it starts speaking.",
+	"pagereader-button-label-stop": "Label on the read-aloud button while it is speaking, to stop it."
+}
