@@ -77,6 +77,19 @@ button on that one page.
 | Edit `MediaWiki:PageReader-config` to add a namespace | Takes effect without a restart |
 | Save invalid JSON to `MediaWiki:PageReader-config` | Falls back to LocalSettings defaults, no error |
 
+## Accessibility checklist
+
+Per [USWDS's component accessibility guidance](https://designsystem.digital.gov/documentation/accessibility/) (USWDS has no dedicated read-aloud/TTS component — "VoiceOver" in their docs is Apple's screen reader, used below as a testing tool, not a UI pattern):
+
+| Check | Expected |
+|-------|----------|
+| Tab to the button | Visible focus outline appears |
+| Activate with keyboard (Space or Enter) | Same as a mouse click — starts/stops speech |
+| Manual pass with VoiceOver (macOS/iOS) or JAWS (Windows) | Button's label and pressed/toggled state are announced correctly |
+| Automated scan with [pa11y](https://pa11y.org/) or [aXe](https://www.deque.com/axe/) against a Kids page | No new violations introduced by the button |
+
+The button already meets USWDS's baseline button guidance by construction — real `<button>` markup (not a styled `<div>`), a 44×44px minimum touch target, and a visible `:focus-visible` outline — so this checklist is a verification pass, not expected to surface new work.
+
 ## After verification
 
 Tom manually removes the read-aloud JS block from `MediaWiki:Common.js`
