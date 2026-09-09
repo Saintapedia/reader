@@ -11,6 +11,7 @@ use MediaWikiIntegrationTestCase;
 /**
  * @covers \MediaWiki\Extension\PageReader\PageReaderEligibility
  * @group PageReader
+ * @group Database
  */
 class PageReaderEligibilityTest extends MediaWikiIntegrationTestCase {
 
