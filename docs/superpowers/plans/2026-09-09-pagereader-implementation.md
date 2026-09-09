@@ -40,7 +40,7 @@
 **Interfaces:**
 - Produces: the full `$wgPageReader*` config surface (names, types, defaults) that every later task's code reads via `Config::get( 'PageReaderX' )`.
 
-- [ ] **Step 1: Create `extension.json` with name, license, requirements, autoloading, and every config default**
+- [x] **Step 1: Create `extension.json` with name, license, requirements, autoloading, and every config default**
 
 ```json
 {
@@ -133,7 +133,7 @@
 }
 ```
 
-- [ ] **Step 2: Create `LICENSE`**
+- [x] **Step 2: Create `LICENSE`**
 
 ```
                     GNU GENERAL PUBLIC LICENSE
@@ -142,7 +142,7 @@
 
 Copy the full standard GPL-2.0-or-later text used by `WantedSort`'s `LICENSE` file verbatim (do not paraphrase a license).
 
-- [ ] **Step 3: Create `composer.json`**
+- [x] **Step 3: Create `composer.json`**
 
 ```json
 {
@@ -174,7 +174,7 @@ Copy the full standard GPL-2.0-or-later text used by `WantedSort`'s `LICENSE` fi
 }
 ```
 
-- [ ] **Step 4: Create `phpcs.xml`**
+- [x] **Step 4: Create `phpcs.xml`**
 
 ```xml
 <?xml version="1.0"?>
@@ -185,7 +185,7 @@ Copy the full standard GPL-2.0-or-later text used by `WantedSort`'s `LICENSE` fi
 </ruleset>
 ```
 
-- [ ] **Step 5: Create `.gitignore`**
+- [x] **Step 5: Create `.gitignore`**
 
 ```
 /vendor/
@@ -193,7 +193,7 @@ Copy the full standard GPL-2.0-or-later text used by `WantedSort`'s `LICENSE` fi
 .phpunit.result.cache
 ```
 
-- [ ] **Step 6: Validate `extension.json` is well-formed and has every required key**
+- [x] **Step 6: Validate `extension.json` is well-formed and has every required key**
 
 Run:
 ```bash
@@ -215,7 +215,7 @@ echo "OK\n";
 ```
 Expected: `OK`
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add extension.json LICENSE composer.json phpcs.xml .gitignore
@@ -231,7 +231,7 @@ EOF
 )"
 ```
 
-- [ ] **Step 8: Get the extension into the local Canasta dev instance so PHPUnit has somewhere to run**
+- [x] **Step 8: Get the extension into the local Canasta dev instance so PHPUnit has somewhere to run**
 
 Every later task runs `docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader` — that command needs the extension loaded into a real MediaWiki install *now*, not just at final verification (Task 9).
 
@@ -271,7 +271,7 @@ docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/te
 - Consumes: `Config::get( 'PageReaderEnabled'|'PageReaderActions'|'PageReaderContentModels'|'PageReaderIncludeTalk'|'PageReaderNamespaces'|'PageReaderTitlePrefixes'|'PageReaderPages'|'PageReaderExcludedNamespaces'|'PageReaderExcludedPages'|'PageReaderLoadEverywhere' )`.
 - Produces: `PageReaderEligibility::isEligible( Title $title, string $action, Config $config ): bool` — used by `Hooks::onBeforePageDisplay` (Task 4) as the first, DB-free gate. **Does not** check the `__NOPAGEREADER__` page property — that is a separate, DB-backed check Task 4 performs only for titles this method already approves (keeps the DB lookup off the hot path for the vast majority of ineligible page views).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/phpunit/PageReaderEligibilityTest.php`:
 
@@ -422,13 +422,13 @@ class PageReaderEligibilityTest extends MediaWikiIntegrationTestCase {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader` (per Task 1 Step 8: dev clone synced via `git pull`, run inside the container)
 
 Expected: FAIL — `Class "MediaWiki\Extension\PageReader\PageReaderEligibility" not found`
 
-- [ ] **Step 3: Write `includes/PageReaderEligibility.php`**
+- [x] **Step 3: Write `includes/PageReaderEligibility.php`**
 
 ```php
 <?php
@@ -539,13 +539,13 @@ class PageReaderEligibility {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader`
 
 Expected: `OK (11 tests, ...)`, all green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add includes/PageReaderEligibility.php tests/phpunit/PageReaderEligibilityTest.php
@@ -575,7 +575,7 @@ EOF
 - Consumes: `Config::get( 'PageReaderConfigPage'|'PageReaderNamespaces'|'PageReaderTitlePrefixes'|'PageReaderPages'|'PageReaderExcludedNamespaces'|'PageReaderExcludedPages'|'PageReaderLoadEverywhere'|'PageReaderContentClass'|'PageReaderContentSelector'|'PageReaderSkipSelectors'|'PageReaderButtonPlacement' )`.
 - Produces: `PageReaderConfigService::getEffectiveConfig( Config $mainConfig ): array` returning an associative array with exactly the keys `namespaces`, `titlePrefixes`, `pages`, `excludedNamespaces`, `excludedPages`, `loadEverywhere`, `contentClass`, `contentSelector`, `skipSelectors`, `buttonPlacement` — consumed by `Hooks::onBeforePageDisplay` (Task 4) in place of reading those ten `$wgPageReader*` values directly.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/phpunit/PageReaderConfigServiceTest.php`:
 
@@ -667,13 +667,13 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader`
 
 Expected: FAIL — `Class "MediaWiki\Extension\PageReader\PageReaderConfigService" not found`
 
-- [ ] **Step 3: Write `includes/PageReaderConfigService.php`**
+- [x] **Step 3: Write `includes/PageReaderConfigService.php`**
 
 ```php
 <?php
@@ -843,13 +843,13 @@ class PageReaderConfigService {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader`
 
 Expected: `OK (16 tests, ...)`, all green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add includes/PageReaderConfigService.php tests/phpunit/PageReaderConfigServiceTest.php
@@ -881,7 +881,7 @@ EOF
 - Produces: on a page passing eligibility, `OutputPage::addModules( 'ext.pageReader' )` and `OutputPage::addJsConfigVars` with keys `wgPageReaderContentClass`, `wgPageReaderContentSelector`, `wgPageReaderSkipSelectors`, `wgPageReaderButtonPlacement` — consumed by `ext.pageReader.js` (Task 6).
 - The `__NOPAGEREADER__` behavior switch: registering the magic word ID `nopagereader` via `GetDoubleUnderscoreIDs` is sufficient for MediaWiki core to automatically call `ParserOutput::setUnsortedPageProperty( 'nopagereader' )` when the switch appears in wikitext (core's `Parser::handleDoubleUnderscore`, confirmed against MediaWiki 1.43.9 core source at `includes/parser/Parser.php:4139-4141`) — **no `ParserFirstCallInit` hook is needed.**
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/phpunit/HooksTest.php`:
 
@@ -994,13 +994,13 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader`
 
 Expected: FAIL — `Class "MediaWiki\Extension\PageReader\Hooks" not found` (and/or the magic word `__NOPAGEREADER__` not recognized, since nothing registers it yet).
 
-- [ ] **Step 3: Create `PageReader.i18n.magic.php`**
+- [x] **Step 3: Create `PageReader.i18n.magic.php`**
 
 ```php
 <?php
@@ -1019,7 +1019,7 @@ $magicWords['en'] = [
 ];
 ```
 
-- [ ] **Step 4: Write `includes/Hooks.php`**
+- [x] **Step 4: Write `includes/Hooks.php`**
 
 ```php
 <?php
@@ -1104,7 +1104,7 @@ class Hooks implements BeforePageDisplayHook, GetDoubleUnderscoreIDsHook {
 
 Note: `Actions`/`ContentModels`/`IncludeTalk`/`Enabled` are intentionally read straight from `$mainConfig` (LocalSettings only) since the spec's overlay field list (spec §5) does not include them — only `namespaces`/`titlePrefixes`/`pages`/`excludedNamespaces`/`excludedPages`/`loadEverywhere` (plus the content-targeting fields) are wiki-overlay-able. `getEffectiveConfig()` is still called unconditionally once `PageReaderEnabled` passes — this adds one `Title::exists()`-style lookup per page view sitewide, mitigated by the `WANObjectCache` keyed on the config page's latest revision ID (Task 3), the same cost profile as other per-request lookups core already performs in `BeforePageDisplay`. Skipping it entirely would silently break the on-wiki overlay for the exact use case it was built for (a wiki editor changing namespaces without a deploy), so this cost is accepted rather than optimized away in v1.
 
-- [ ] **Step 5: Register hooks and the magic word file in `extension.json`**
+- [x] **Step 5: Register hooks and the magic word file in `extension.json`**
 
 Add to `extension.json`:
 
@@ -1148,13 +1148,13 @@ Add to `extension.json`:
 	],
 ```
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 Run: `docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader`
 
 Expected: `OK (20 tests, ...)`, all green.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add includes/Hooks.php includes/ServiceWiring.php PageReader.i18n.magic.php extension.json tests/phpunit/HooksTest.php
@@ -1191,7 +1191,7 @@ EOF
 **Interfaces:**
 - Produces: message keys `pagereader-desc`, `pagereader-button-label`, `pagereader-button-label-stop` — consumed by `extension.json`'s `descriptionmsg` (already referenced in Task 1) and by `ext.pageReader.js` (Task 6).
 
-- [ ] **Step 1: Create `i18n/en.json`**
+- [x] **Step 1: Create `i18n/en.json`**
 
 ```json
 {
@@ -1204,7 +1204,7 @@ EOF
 }
 ```
 
-- [ ] **Step 2: Create `i18n/qqq.json`**
+- [x] **Step 2: Create `i18n/qqq.json`**
 
 ```json
 {
@@ -1217,7 +1217,7 @@ EOF
 }
 ```
 
-- [ ] **Step 3: Validate both files are well-formed JSON with matching keys**
+- [x] **Step 3: Validate both files are well-formed JSON with matching keys**
 
 Run:
 ```bash
@@ -1234,7 +1234,7 @@ echo "OK\n";
 ```
 Expected: `OK`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add i18n/en.json i18n/qqq.json
@@ -1258,7 +1258,7 @@ EOF
 - Consumes: `mw.config.get( 'wgPageReaderContentClass' | 'wgPageReaderContentSelector' | 'wgPageReaderSkipSelectors' | 'wgPageReaderButtonPlacement' )` (set by `Hooks::onBeforePageDisplay`, Task 4); `mw.msg( 'pagereader-button-label' | 'pagereader-button-label-stop' )` (Task 5).
 - Produces: a `.pagereader-button` element and a `.pagereader-speaking` class toggle, styled by `ext.pageReader.css` (Task 7).
 
-- [ ] **Step 1: Write `resources/ext.pageReader.js`**
+- [x] **Step 1: Write `resources/ext.pageReader.js`**
 
 ```js
 /* PageReader: config-driven read-aloud button. Every entry point is
@@ -1424,11 +1424,11 @@ EOF
 
 Note on duplicate-guard fidelity: the reference script inserts the button once and relies on `data-kids-bound` on the *button* to avoid re-binding; because `insertButton()` here only runs when no existing `.pagereader-button` sibling is found, and `bindButton()` still checks `data-pagereader-bound` before attaching a second click listener, re-running `initPageReader` (e.g. on a second `wikipage.content` fire for the same content) does not create a duplicate button or a duplicate listener — matching the original guarantee.
 
-- [ ] **Step 2: Manual verification (no JS test harness exists in this codebase; WantedSort/NearMe have none either)**
+- [x] **Step 2: Manual verification (no JS test harness exists in this codebase; WantedSort/NearMe have none either)**
 
 This step cannot be automated yet — defer functional verification to Task 9's end-to-end Canasta smoke test, which exercises this exact file. Do not skip Task 9.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add resources/ext.pageReader.js
@@ -1457,7 +1457,7 @@ EOF
 **Interfaces:**
 - Produces: the `ext.pageReader` ResourceLoader module definition that `Hooks::onBeforePageDisplay` (Task 4) references by name.
 
-- [ ] **Step 1: Write `resources/ext.pageReader.css`**
+- [x] **Step 1: Write `resources/ext.pageReader.css`**
 
 ```css
 /* Ported from Saintapedia/kids assets/kids-styles.css
@@ -1518,7 +1518,7 @@ EOF
 }
 ```
 
-- [ ] **Step 2: Register the module in `extension.json`**
+- [x] **Step 2: Register the module in `extension.json`**
 
 Add:
 ```json
@@ -1536,11 +1536,11 @@ Add:
 	},
 ```
 
-- [ ] **Step 3: Validate `extension.json` is still well-formed**
+- [x] **Step 3: Validate `extension.json` is still well-formed**
 
 Run the same validation script from Task 1 Step 6; expect `OK`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add resources/ext.pageReader.css extension.json
@@ -1570,7 +1570,7 @@ EOF
 **Interfaces:**
 - None (documentation only).
 
-- [ ] **Step 1: Write `README.md`**
+- [x] **Step 1: Write `README.md`**
 
 ```markdown
 # PageReader
@@ -1627,7 +1627,7 @@ See [DEPLOY.md](./DEPLOY.md) for other wikis' configuration options and
 the Common.js/Common.css cleanup step.
 ```
 
-- [ ] **Step 2: Write `DEPLOY.md`**
+- [x] **Step 2: Write `DEPLOY.md`**
 
 ```markdown
 # PageReader production deploy
@@ -1725,7 +1725,7 @@ git checkout <commit>
 ```
 ```
 
-- [ ] **Step 3: Write `CHANGELOG.md`**
+- [x] **Step 3: Write `CHANGELOG.md`**
 
 ```markdown
 # Changelog
@@ -1738,7 +1738,7 @@ git checkout <commit>
   ResourceLoader module.
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add README.md DEPLOY.md CHANGELOG.md
@@ -1759,14 +1759,14 @@ EOF
 
 **Interfaces:** none — this task validates Tasks 1–8 together in a real MediaWiki install. The extension is already symlinked and loaded into the dev instance from Task 1, Step 8.
 
-- [ ] **Step 1: Run the full PHPUnit suite one more time from a clean state**
+- [x] **Step 1: Run the full PHPUnit suite one more time from a clean state**
 
 ```bash
 docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader
 ```
 Expected: all tests from Tasks 2–4 pass (`OK (20 tests, ...)`).
 
-- [ ] **Step 2: Create test pages and verify eligibility/button behavior in a browser**
+- [x] **Step 2: Create test pages and verify eligibility/button behavior in a browser**
 
 Create `Kids:Test page` with some sample text, and `Portal:Kids` and `Portal:Kids/Sub` similarly. For each:
 - Load the page; confirm the "Read this page aloud" button appears exactly once.
@@ -1777,11 +1777,11 @@ Create a page titled `Portal:KidsCorner` with sample text; confirm **no** button
 
 Load any ordinary content page (e.g. the wiki's main page); confirm no button appears and, via the browser devtools network panel or `mw.loader.getState( 'ext.pageReader' )` in the console, confirm the module was never requested.
 
-- [ ] **Step 3: Verify the `__NOPAGEREADER__` opt-out**
+- [x] **Step 3: Verify the `__NOPAGEREADER__` opt-out**
 
 Edit `Kids:Test page` to add `__NOPAGEREADER__` anywhere in the wikitext, save, reload the page. Confirm the button no longer appears.
 
-- [ ] **Step 4: Verify the on-wiki config overlay**
+- [x] **Step 4: Verify the on-wiki config overlay**
 
 Create `MediaWiki:PageReader-config` with:
 ```json
@@ -1789,8 +1789,23 @@ Create `MediaWiki:PageReader-config` with:
 ```
 Reload a page in namespace `2000` (or create one if it doesn't exist on the dev wiki) and confirm the button now appears there too, with no LocalSettings change and no restart. Then edit `MediaWiki:PageReader-config` to invalid JSON (`not json`) and confirm namespace `1004` pages still work (falls back to LocalSettings defaults).
 
-- [ ] **Step 5: Record the result**
+- [x] **Step 5: Record the result**
 
 If every check in Steps 1–4 passes, this plan is complete. If anything fails, fix the relevant task's code, re-run its own PHPUnit tests, then re-run this task's Steps 1–4 from the top before considering the plan done — do not patch around a failure by skipping a check.
 
 No commit for this task (verification only, no files changed) — unless Step 7 uncovers a bug, in which case fix it under the task where the bug actually lives and commit there.
+
+## Execution results (2026-09-09)
+
+All 9 tasks executed and verified:
+
+- **PHPUnit**: 23/23 pass (`docker exec -e PHPUNIT_USE_NORMAL_TABLES=1 dev-web-1 php /var/www/mediawiki/w/tests/phpunit/phpunit.php --group PageReader`), from a clean `git pull`-synced dev clone.
+- **Live eligibility matrix** (real pages created via `maintenance/run.php edit`, checked via `RLPAGEMODULES` in the served HTML):
+  - `Kids:PageReader test`, `Portal:Kids`, `Portal:Kids/Sub` → module loaded ✓
+  - `Portal:KidsCorner`, an ordinary main-namespace page → module **not** loaded ✓ (confirms the exact-or-subpage match rule does not falsely match)
+- **`__NOPAGEREADER__` opt-out**: a Kids page with the switch in its wikitext correctly did not load the module, live.
+- **On-wiki overlay**: adding `MediaWiki:PageReader-config` with `{"namespaces": [1004, 0]}` made a namespace-0 page eligible with zero LocalSettings changes and no restart. Overwriting the page with invalid JSON correctly fell back to the LocalSettings defaults (namespace-0 page went back to ineligible; Kids pages were unaffected).
+- **Varnish caveat discovered during this check**: verifying the malformed-JSON fallback through the public port (8080, behind Varnish) initially showed a stale (pre-edit) result — checking directly against the `dev-web-1` container (bypassing Varnish) showed the correct, already-fixed-up result. The PageReader logic itself was correct throughout; this was purely HTML-page cache staleness in Varnish, the same caching layer implicated in the original 2026-09-08/09 outage this extension exists to prevent recurrence of — worth knowing about when manually spot-checking this wiki through the public port after an edit.
+- **JS/CSS delivery**: confirmed via `load.php?modules=ext.pageReader` that the real served JS contains `bindButton`/the correct message keys, and the real served CSS contains the `pagereader-pulse` keyframes.
+- **Not verified**: interactive click-to-toggle behavior (button label/`aria-pressed`/pulse animation) in an actual browser — the Claude-in-Chrome extension was not connected during this session. The JS was syntax-checked (`node --check`) and is a structurally faithful, duplicate-guarded port of the original reference behavior, but this specific interactive path has no automated test and was not manually clicked.
+- All 8 test pages (including the config overlay page) were deleted after verification via `maintenance/run.php deleteBatch`. The dev instance remains healthy and unchanged otherwise (`Special:Version` 200, `dev-web-1` health status `healthy`).
