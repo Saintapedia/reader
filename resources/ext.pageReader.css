@@ -1,0 +1,56 @@
+/* Ported from Saintapedia/kids assets/kids-styles.css
+   (.kids-readaloud-button / .kids-readaloud-speaking / @keyframes
+   kids-readaloud-pulse), renamed to .pagereader-button /
+   .pagereader-speaking. Shared CSS custom properties from
+   MediaWiki:Common.css (--kids-gold, --kids-navy-deep,
+   --kids-terracotta) are resolved here to literal hex values, since
+   that variable-declaring selector group is not moving out of
+   Common.css. */
+
+.pagereader-button {
+	display: inline-block;
+	margin: 0.4em 0 1em;
+	padding: 0.75em 1.5em;
+	min-height: 44px;
+	min-width: 44px;
+	border: none;
+	border-radius: 999px;
+	background: #C4A35A;
+	color: #152C4A;
+	font-size: 1.05em;
+	font-weight: 700;
+	cursor: pointer;
+	box-shadow: 0 1px 0 rgba( 0, 0, 0, 0.12 );
+}
+
+.pagereader-button:hover {
+	background: #D4B56A;
+}
+
+.pagereader-button:focus-visible {
+	outline: 3px solid #1E3A5F;
+	outline-offset: 3px;
+}
+
+.pagereader-button.pagereader-speaking {
+	background: #A85D1B;
+	color: #FFFDF5;
+	animation: pagereader-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pagereader-pulse {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.75; }
+}
+
+@media ( prefers-reduced-motion: reduce ) {
+	.pagereader-button.pagereader-speaking {
+		animation: none;
+	}
+}
+
+@media print {
+	.pagereader-button {
+		display: none !important;
+	}
+}
