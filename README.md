@@ -49,7 +49,17 @@ JS: `resources/ext.pageReader.js` has no PHPUnit coverage of its own, so
 covering button placement/insertion, the duplicate-button guard across
 all three `PageReaderButtonPlacement` modes, label/`aria-pressed`/class
 toggling, skip-selector filtering (including a malformed selector, which
-must not abort speech), and the content-fallback-selector path:
+must not abort speech), and the content-fallback-selector path.
+
+Accessibility: `tests/node/accessibility.test.js` runs an
+[axe-core](https://github.com/dequelabs/axe-core) structural/ARIA scan
+against the button in both idle and "speaking" states, plus WCAG 2 AA
+color-contrast checks computed directly from the literal hex values in
+`ext.pageReader.css` (jsdom has no rendering engine, so axe's own
+canvas-based contrast check can't run reliably — this is a more precise
+substitute for colors that are static, not computed). See
+[DEPLOY.md](./DEPLOY.md)'s accessibility checklist for what's still
+manual (a VoiceOver/JAWS pass).
 
 ```bash
 npm install
