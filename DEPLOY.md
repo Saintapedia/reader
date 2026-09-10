@@ -23,12 +23,17 @@ No database schema changes — `update.php` is not required.
 
 No LocalSettings changes needed. Defaults already reproduce the exact
 current Kids-only behavior: namespace `1004`, `Kids:` prefix,
-`Portal:Kids` (+ subpages).
+`Portal:Kids` (+ subpages), and — critically — content class
+`kids-readaloud`, matching the class already present in existing Kids:
+articles from the prior Common.js implementation. **Do not change the
+default content class without also updating (or accepting the loss of)
+the read-aloud button on every existing Kids: article that still uses
+the old class.**
 
-**These two defaults (`1004` and `"Kids:"`) are Saintapedia-specific,
-not hardcoded assumptions** — any other wiki installing this extension
-should expect to override them, either in LocalSettings or via
-`MediaWiki:PageReader-config`.
+**These defaults (`1004`, `"Kids:"`, `kids-readaloud`) are
+Saintapedia-specific, not hardcoded assumptions** — any other wiki
+installing this extension should expect to override them, either in
+LocalSettings or via `MediaWiki:PageReader-config`.
 
 ## Going wiki-wide on another wiki
 
@@ -47,7 +52,9 @@ $wgPageReaderEnabled = false;
 
 ## On-wiki config overlay
 
-Create `MediaWiki:PageReader-config` with JSON such as:
+`MediaWiki:PageReader-config` requires `editinterface` to edit (sysop by
+default) — same protection level as `MediaWiki:Common.js`. Create it with
+JSON such as:
 ```json
 {
 	"namespaces": [1004, 2000],
@@ -57,8 +64,18 @@ Create `MediaWiki:PageReader-config` with JSON such as:
 ```
 Any field omitted here keeps its `$wgPageReader*` LocalSettings value.
 Takes effect immediately on save (cache is keyed on the page's latest
-revision ID). An invalid edit (bad JSON) silently falls back to the
-LocalSettings defaults rather than breaking the site.
+revision ID). An invalid edit (bad JSON, or a non-text content model on
+the page) silently falls back to the LocalSettings defaults rather than
+breaking the site.
+
+**Overridable keys**: `namespaces`, `titlePrefixes`, `pages`,
+`excludedNamespaces`, `excludedPages`, `loadEverywhere`, `contentClass`,
+`contentSelector`, `skipSelectors`, `buttonPlacement`.
+
+**LocalSettings-only, cannot be overridden here**: `PageReaderEnabled`,
+`PageReaderActions`, `PageReaderContentModels`, `PageReaderIncludeTalk`,
+`PageReaderConfigPage` itself. Setting `"enabled": false` or
+`"actions": ["view", "edit"]` in this JSON page has **no effect**.
 
 ## Per-page editor opt-out
 

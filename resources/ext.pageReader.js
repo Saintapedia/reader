@@ -14,6 +14,13 @@
 
 	function buildSpeechText( contentRoot ) {
 		var clone = contentRoot.cloneNode( true );
+		// The button itself can end up inside contentRoot (the 'top-of-content'
+		// placement inserts it as content's first child) — always strip it so
+		// its own label is never read aloud, regardless of $wgPageReaderSkipSelectors.
+		var ownButton = clone.querySelectorAll( '.pagereader-button' );
+		for ( var j = 0; j < ownButton.length; j++ ) {
+			ownButton[ j ].parentNode.removeChild( ownButton[ j ] );
+		}
 		getSkipSelectors().forEach( function ( selector ) {
 			var matches = clone.querySelectorAll( selector );
 			for ( var i = 0; i < matches.length; i++ ) {
@@ -78,7 +85,11 @@
 				return root;
 			}
 			if ( root.querySelector ) {
-				var marked = root.querySelector( '.' + contentClass );
+				// CSS.escape guards against a contentClass value (settable via the
+				// on-wiki config overlay) containing characters that would change
+				// selector semantics or throw when naively concatenated.
+				var escaped = ( window.CSS && CSS.escape ) ? CSS.escape( contentClass ) : contentClass;
+				var marked = root.querySelector( '.' + escaped );
 				if ( marked ) {
 					return marked;
 				}

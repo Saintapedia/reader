@@ -5,8 +5,10 @@ declare( strict_types = 1 );
 namespace MediaWiki\Extension\PageReader;
 
 use MediaWiki\Config\Config;
+use MediaWiki\Content\TextContent;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Title\Title;
+use Throwable;
 
 /**
  * Loads an optional MediaWiki:<PageReaderConfigPage> JSON overlay on top of
@@ -83,18 +85,26 @@ class PageReaderConfigService {
 			$key,
 			self::CACHE_TTL,
 			function () use ( $title ) {
-				$wikiPage = MediaWikiServices::getInstance()->getWikiPageFactory()->newFromTitle( $title );
-				$content = $wikiPage->getContent();
-				if ( $content === null ) {
+				// A broken config page must degrade to LocalSettings, never break
+				// the page render — guard against a non-text content model (no
+				// getText()) or any other unexpected failure while reading it.
+				try {
+					$wikiPage = MediaWikiServices::getInstance()->getWikiPageFactory()->newFromTitle( $title );
+					$content = $wikiPage->getContent();
+					if ( $content === null || !( $content instanceof TextContent ) ) {
+						return null;
+					}
+
+					$raw = $this->parseJsonConfig( $content->getText() );
+					if ( $raw === null ) {
+						return null;
+					}
+
+					return $this->normalizeOverlay( $raw );
+				} catch ( Throwable $e ) {
+					wfDebugLog( 'PageReader', 'Failed to load MediaWiki:PageReader-config: ' . $e->getMessage() );
 					return null;
 				}
-
-				$raw = $this->parseJsonConfig( $content->getText() );
-				if ( $raw === null ) {
-					return null;
-				}
-
-				return $this->normalizeOverlay( $raw );
 			}
 		);
 
@@ -150,8 +160,11 @@ class PageReaderConfigService {
 			}
 		}
 
-		if ( isset( $raw['loadEverywhere'] ) ) {
-			$overlay['loadEverywhere'] = (bool)$raw['loadEverywhere'];
+		// Only accept an actual JSON boolean (true/false, unquoted) — a loose
+		// (bool) cast would silently turn a sysop's typo'd "false" (string)
+		// into true, the opposite of a graceful degrade on malformed input.
+		if ( isset( $raw['loadEverywhere'] ) && is_bool( $raw['loadEverywhere'] ) ) {
+			$overlay['loadEverywhere'] = $raw['loadEverywhere'];
 		}
 
 		foreach ( [ 'contentClass', 'contentSelector', 'buttonPlacement' ] as $key ) {

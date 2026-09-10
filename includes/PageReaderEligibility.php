@@ -67,11 +67,14 @@ class PageReaderEligibility {
 	}
 
 	/**
-	 * Plain string-prefix match against the title's prefixed text. Prefixes
-	 * such as "Kids:" are not themselves parseable as a Title (no page name
-	 * after the colon), so — unlike matchesAnyPage() — no Title::newFromText()
-	 * normalization is applied here; site operators are expected to write
-	 * the correct casing, which is documented in README.md.
+	 * Plain, case-sensitive string-prefix match against the title's prefixed
+	 * text (spaces, not underscores — matching Title::getPrefixedText()).
+	 * Prefixes such as "Kids:" are not themselves parseable as a Title (no
+	 * page name after the colon), so — unlike matchesAnyPage() — no
+	 * Title::newFromText() normalization is applied here: "kids:" will NOT
+	 * match "Kids:Foo", and "Kids:Foo_bar" (underscore) will NOT match the
+	 * prefixed text "Kids:Foo bar" (space). This exact rule is documented in
+	 * README.md — keep both in sync if it changes.
 	 *
 	 * @param array<int,string> $prefixes
 	 */

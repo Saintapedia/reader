@@ -8,8 +8,6 @@ use MediaWiki\Config\HashConfig;
 use MediaWiki\Hook\GetDoubleUnderscoreIDsHook;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Output\Hook\BeforePageDisplayHook;
-use MediaWiki\Output\OutputPage;
-use Skin;
 
 class Hooks implements BeforePageDisplayHook, GetDoubleUnderscoreIDsHook {
 
@@ -53,7 +51,10 @@ class Hooks implements BeforePageDisplayHook, GetDoubleUnderscoreIDsHook {
 			'PageReaderLoadEverywhere' => $effective['loadEverywhere'],
 		] );
 
-		$action = $out->getRequest()->getRawVal( 'action', 'view' );
+		// getRawVal()'s $default parameter is deprecated since MW 1.43 (our
+		// floor version) and is slated for removal — extension.json declares
+		// no upper MediaWiki version bound, so use ?? instead of relying on it.
+		$action = $out->getRequest()->getRawVal( 'action' ) ?? 'view';
 
 		if ( !PageReaderEligibility::isEligible( $title, $action, $eligibilityConfig ) ) {
 			return;

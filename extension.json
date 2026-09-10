@@ -74,8 +74,8 @@
 			"description": "If true, ignore PageReaderNamespaces/TitlePrefixes/Pages and load on every page passing the other gates."
 		},
 		"PageReaderContentClass": {
-			"value": "pagereader-content",
-			"description": "CSS class marking the element to read aloud. An editor can place it anywhere in any article."
+			"value": "kids-readaloud",
+			"description": "CSS class marking the element to read aloud. An editor can place it anywhere in any article. Default matches the class already used in existing Saintapedia Kids: articles (ported from the prior Common.js implementation) so removing Common.js does not silently make the button stop appearing."
 		},
 		"PageReaderContentSelector": {
 			"value": "",
@@ -94,7 +94,7 @@
 		},
 		"PageReaderConfigPage": {
 			"value": "PageReader-config",
-			"description": "MediaWiki:-namespace JSON page overriding the above (except Enabled). Empty string disables the overlay."
+			"description": "MediaWiki:-namespace JSON page (requires editinterface to edit) that can override: namespaces, titlePrefixes, pages, excludedNamespaces, excludedPages, loadEverywhere, contentClass, contentSelector, skipSelectors, buttonPlacement. PageReaderEnabled, PageReaderActions, PageReaderContentModels, and PageReaderIncludeTalk are LocalSettings-only and cannot be overridden here. Empty string disables the overlay."
 		}
 	},
 	"ResourceFileModulePaths": {
@@ -108,8 +108,7 @@
 			"messages": [
 				"pagereader-button-label",
 				"pagereader-button-label-stop"
-			],
-			"targets": [ "desktop", "mobile" ]
+			]
 		}
 	}
 }

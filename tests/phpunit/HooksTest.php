@@ -74,6 +74,11 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 		$out = $this->runBeforePageDisplay( 'Kids:Test page' );
 
 		$this->assertContains( 'ext.pageReader', $out->getModules() );
+
+		$jsVars = $out->getJsConfigVars();
+		$this->assertSame( 'pagereader-content', $jsVars['wgPageReaderContentClass'] );
+		$this->assertSame( 'before-content', $jsVars['wgPageReaderButtonPlacement'] );
+		$this->assertSame( [ '.infobox' ], $jsVars['wgPageReaderSkipSelectors'] );
 	}
 
 	public function testNonKidsPageDoesNotLoadModule(): void {

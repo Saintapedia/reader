@@ -76,6 +76,36 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 		$this->assertSame( [ 1004 ], $effective['namespaces'] );
 	}
 
+	public function testEmptyObjectOverlayFallsBackToLocalSettings(): void {
+		$this->baseConfig();
+		$this->editPage( 'MediaWiki:PageReader-config', '{}' );
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( [ 1004 ], $effective['namespaces'] );
+		$this->assertSame( [ 'Kids:' ], $effective['titlePrefixes'] );
+	}
+
+	public function testUnoverridableKeysInOverlayAreSilentlyIgnored(): void {
+		// enabled/actions/includeTalk are LocalSettings-only; PageReaderConfigService
+		// never reads them from the overlay JSON, so setting them here has no
+		// effect and does not interfere with the (unrelated) overridable keys.
+		$this->baseConfig();
+		$this->editPage(
+			'MediaWiki:PageReader-config',
+			'{"enabled": false, "actions": ["view", "edit"], "includeTalk": true, "namespaces": [1004, 3000]}'
+		);
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( [ 1004, 3000 ], $effective['namespaces'] );
+		$this->assertArrayNotHasKey( 'enabled', $effective );
+		$this->assertArrayNotHasKey( 'actions', $effective );
+		$this->assertArrayNotHasKey( 'includeTalk', $effective );
+	}
+
 	public function testParseJsonConfigExtractsObjectFromNowikiWrapper(): void {
 		$service = new PageReaderConfigService();
 
