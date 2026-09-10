@@ -44,20 +44,30 @@
 		}
 
 		button.addEventListener( 'click', function () {
-			if ( speaking ) {
+			try {
+				if ( speaking ) {
+					window.speechSynthesis.cancel();
+					stopSpeaking();
+					return;
+				}
+				// buildSpeechText() runs $wgPageReaderSkipSelectors (editable via the
+				// on-wiki config overlay) through querySelectorAll(); an invalid
+				// selector throws synchronously here, so this must stay guarded.
+				var utterance = new window.SpeechSynthesisUtterance( buildSpeechText( contentRoot ) );
+				utterance.onend = stopSpeaking;
+				utterance.onerror = stopSpeaking;
 				window.speechSynthesis.cancel();
+				window.speechSynthesis.speak( utterance );
+				speaking = true;
+				button.textContent = labelStop;
+				button.classList.add( 'pagereader-speaking' );
+				button.setAttribute( 'aria-pressed', 'true' );
+			} catch ( e ) {
+				if ( window.console && console.warn ) {
+					console.warn( 'PageReader failed', e );
+				}
 				stopSpeaking();
-				return;
 			}
-			var utterance = new window.SpeechSynthesisUtterance( buildSpeechText( contentRoot ) );
-			utterance.onend = stopSpeaking;
-			utterance.onerror = stopSpeaking;
-			window.speechSynthesis.cancel();
-			window.speechSynthesis.speak( utterance );
-			speaking = true;
-			button.textContent = labelStop;
-			button.classList.add( 'pagereader-speaking' );
-			button.setAttribute( 'aria-pressed', 'true' );
 		} );
 	}
 
@@ -83,8 +93,27 @@
 		return null;
 	}
 
-	function insertButton( content ) {
-		var placement = mw.config.get( 'wgPageReaderButtonPlacement' ) || 'before-content';
+	// The duplicate-button guard in initPageReader() needs to look in the same
+	// place insertButton() puts the button, for each placement mode — otherwise
+	// a repeat wikipage.content firing (e.g. an AJAX content refresh) won't find
+	// the existing button and will insert another one.
+	function findExistingButton( content, placement ) {
+		var candidate;
+		if ( placement === 'after-heading' ) {
+			var heading = document.getElementById( 'firstHeading' );
+			candidate = heading && heading.nextElementSibling;
+		} else if ( placement === 'top-of-content' ) {
+			candidate = content.firstElementChild;
+		} else {
+			candidate = content.previousElementSibling;
+		}
+		if ( candidate && candidate.classList && candidate.classList.contains( 'pagereader-button' ) ) {
+			return candidate;
+		}
+		return null;
+	}
+
+	function insertButton( content, placement ) {
 		var button = document.createElement( 'button' );
 		button.className = 'pagereader-button';
 		button.setAttribute( 'aria-pressed', 'false' );
@@ -125,13 +154,8 @@
 				return;
 			}
 
-			var existing = content.previousElementSibling;
-			var button;
-			if ( existing && existing.classList && existing.classList.contains( 'pagereader-button' ) ) {
-				button = existing;
-			} else {
-				button = insertButton( content );
-			}
+			var placement = mw.config.get( 'wgPageReaderButtonPlacement' ) || 'before-content';
+			var button = findExistingButton( content, placement ) || insertButton( content, placement );
 
 			bindButton( button, content );
 		} catch ( e ) {

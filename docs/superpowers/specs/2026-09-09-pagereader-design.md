@@ -220,8 +220,10 @@ guarantees preserved exactly:
   aloud" — per the original task spec). `aria-pressed` toggled
   true/false. `kids-readaloud-speaking`-equivalent class
   (`pagereader-speaking`) added/removed for the pulse animation.
-- If `speechSynthesis` is unavailable, the button is hidden
-  (`display: none`) rather than removed, matching the reference.
+- If `speechSynthesis` is unavailable, no button element is created at all
+  (checked in `initPageReader` before insertion) — simpler than the
+  reference's insert-then-hide (`display: none`) approach, with the same
+  net visible effect, and no dead DOM element to reason about.
 - Runs on `mw.hook( 'wikipage.content' ).add( init )` with a
   `DOMContentLoaded` fallback when `mw.hook` isn't available, so it
   fires on both initial load and AJAX-rendered content (e.g. VisualEditor

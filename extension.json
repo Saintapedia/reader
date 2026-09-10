@@ -105,7 +105,6 @@
 		"ext.pageReader": {
 			"scripts": [ "resources/ext.pageReader.js" ],
 			"styles": [ "resources/ext.pageReader.css" ],
-			"dependencies": [ "mediawiki.util" ],
 			"messages": [
 				"pagereader-button-label",
 				"pagereader-button-label-stop"

@@ -8,10 +8,13 @@ use MediaWiki\Config\Config;
 use MediaWiki\Title\Title;
 
 /**
- * Stateless eligibility check: does not touch the database. The
- * __NOPAGEREADER__ per-page opt-out (a page property) is checked
- * separately by Hooks::onBeforePageDisplay, only for titles this
- * class already approves.
+ * Stateless eligibility check: performs no database queries of its own.
+ * Relies on the passed-in Title already being hydrated by the caller (as
+ * OutputPage::getTitle() is in Hooks::onBeforePageDisplay) — Title methods
+ * like getContentModel()/isRedirect() can otherwise trigger a lazy DB
+ * lookup on an unhydrated Title. The __NOPAGEREADER__ per-page opt-out (a
+ * page property) is checked separately by Hooks::onBeforePageDisplay, only
+ * for titles this class already approves.
  */
 class PageReaderEligibility {
 

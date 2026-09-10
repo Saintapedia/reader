@@ -17,9 +17,6 @@ class PageReaderConfigService {
 	private const CACHE_VERSION = 1;
 	private const CACHE_TTL = 300;
 
-	private ?array $resolvedOverlay = null;
-	private bool $overlayResolved = false;
-
 	/**
 	 * @return array{
 	 *   namespaces:array<int,int>,
@@ -56,20 +53,23 @@ class PageReaderConfigService {
 		return array_merge( $defaults, $overlay );
 	}
 
+	/**
+	 * Deliberately not memoized on the instance: getEffectiveConfig() is a
+	 * public method taking Config per call, and instance-level memoization
+	 * would defeat the WANObjectCache revision-keyed freshness check below
+	 * for the lifetime of any long-running process (e.g. a maintenance
+	 * script) that reuses one PageReaderConfigService across many calls.
+	 * The WANObjectCache lookup itself is cheap on a hit.
+	 */
 	private function getResolvedOverlay( Config $mainConfig ): ?array {
-		if ( $this->overlayResolved ) {
-			return $this->resolvedOverlay;
-		}
-		$this->overlayResolved = true;
-
 		$pageName = (string)$mainConfig->get( 'PageReaderConfigPage' );
 		if ( $pageName === '' ) {
-			return $this->resolvedOverlay = null;
+			return null;
 		}
 
 		$title = Title::makeTitleSafe( NS_MEDIAWIKI, $pageName );
 		if ( $title === null || !$title->exists() ) {
-			return $this->resolvedOverlay = null;
+			return null;
 		}
 
 		$cache = MediaWikiServices::getInstance()->getMainWANObjectCache();
@@ -98,7 +98,7 @@ class PageReaderConfigService {
 			}
 		);
 
-		return $this->resolvedOverlay = ( is_array( $overlay ) && $overlay !== [] ) ? $overlay : null;
+		return ( is_array( $overlay ) && $overlay !== [] ) ? $overlay : null;
 	}
 
 	/**
