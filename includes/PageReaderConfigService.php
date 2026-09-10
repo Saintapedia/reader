@@ -143,7 +143,16 @@ class PageReaderConfigService {
 
 		foreach ( [ 'namespaces', 'excludedNamespaces' ] as $key ) {
 			if ( isset( $raw[$key] ) && is_array( $raw[$key] ) ) {
-				$overlay[$key] = array_values( array_map( 'intval', $raw[$key] ) );
+				// Only accept genuinely namespace-ID-shaped entries — a bare
+				// intval() on e.g. "Kids" (a plausible sysop typo for a title
+				// prefix instead of a namespace ID) silently produces 0
+				// (NS_MAIN), turning a typo into "read-aloud on every
+				// main-namespace wikitext page". Negative IDs (NS_SPECIAL,
+				// NS_MEDIA, etc.) are valid and must still be allowed.
+				$overlay[$key] = array_values( array_map(
+					'intval',
+					array_filter( $raw[$key], [ self::class, 'isNamespaceLike' ] )
+				) );
 			}
 		}
 
@@ -174,5 +183,26 @@ class PageReaderConfigService {
 		}
 
 		return $overlay;
+	}
+
+	/**
+	 * True for a value that unambiguously represents a namespace ID: a native
+	 * int, a whole-number float, or a string of an optionally-signed integer
+	 * (e.g. "1004", "-1"). Negative IDs are valid namespace IDs (NS_SPECIAL,
+	 * NS_MEDIA) and must not be rejected.
+	 *
+	 * @param mixed $entry
+	 */
+	private static function isNamespaceLike( $entry ): bool {
+		if ( is_int( $entry ) ) {
+			return true;
+		}
+		if ( is_float( $entry ) ) {
+			return $entry === floor( $entry );
+		}
+		if ( is_string( $entry ) ) {
+			return (bool)preg_match( '/^-?\d+$/', trim( $entry ) );
+		}
+		return false;
 	}
 }

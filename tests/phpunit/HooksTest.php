@@ -35,7 +35,10 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 			'PageReaderExcludedNamespaces' => [],
 			'PageReaderExcludedPages' => [],
 			'PageReaderLoadEverywhere' => false,
-			'PageReaderContentClass' => 'pagereader-content',
+			// Deliberately NOT overriding PageReaderContentClass here: leaving it
+			// at its real extension.json default (kids-readaloud) is what lets
+			// testKidsNamespacePageLoadsModule's assertion actually catch a
+			// regression of the critical production-content-class fix.
 			'PageReaderContentSelector' => '',
 			'PageReaderSkipSelectors' => [ '.infobox' ],
 			'PageReaderButtonPlacement' => 'before-content',
@@ -76,7 +79,10 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 		$this->assertContains( 'ext.pageReader', $out->getModules() );
 
 		$jsVars = $out->getJsConfigVars();
-		$this->assertSame( 'pagereader-content', $jsVars['wgPageReaderContentClass'] );
+		// This is the extension.json shipped default, not a test-fixture value —
+		// asserting it here is what locks in the critical fix (the default must
+		// match the class real Saintapedia Kids articles actually use).
+		$this->assertSame( 'kids-readaloud', $jsVars['wgPageReaderContentClass'] );
 		$this->assertSame( 'before-content', $jsVars['wgPageReaderButtonPlacement'] );
 		$this->assertSame( [ '.infobox' ], $jsVars['wgPageReaderSkipSelectors'] );
 	}
@@ -107,5 +113,16 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 		$out = $this->runBeforePageDisplay( 'Ordinary page under overlay' );
 
 		$this->assertContains( 'ext.pageReader', $out->getModules() );
+	}
+
+	public function testOnWikiOverlayContentClassReachesJsConfigVars(): void {
+		$this->overridePageReaderConfig( [ 'PageReaderConfigPage' => 'PageReader-config' ] );
+		$this->editPage( 'MediaWiki:PageReader-config', '{"contentClass": "overlay-class"}' );
+		$this->editPage( 'Kids:Overlay content class test', 'Some content.' );
+
+		$out = $this->runBeforePageDisplay( 'Kids:Overlay content class test' );
+
+		$jsVars = $out->getJsConfigVars();
+		$this->assertSame( 'overlay-class', $jsVars['wgPageReaderContentClass'] );
 	}
 }

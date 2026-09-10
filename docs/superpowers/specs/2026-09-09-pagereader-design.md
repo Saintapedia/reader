@@ -86,9 +86,9 @@ PageReader/
 
 `extension.json`: `type: "other"` (no special page), `manifest_version:
 2`, `AutoloadNamespaces` → `MediaWiki\Extension\PageReader\`, `Hooks` →
-`BeforePageDisplay` and `ParserFirstCallInit` (for the `__NOPAGEREADER__`
-switch), `MessagesDirs`, `ResourceModules`, `ResourceFileModulePaths`
-(`remoteExtPath: "PageReader"`).
+`BeforePageDisplay` and `GetDoubleUnderscoreIDs` (for the
+`__NOPAGEREADER__` switch — see §7), `MessagesDirs`, `ResourceModules`,
+`ResourceFileModulePaths` (`remoteExtPath: "PageReader"`).
 
 ## 4. Configuration
 
@@ -108,7 +108,7 @@ behavior with **zero LocalSettings changes**.
 | `$wgPageReaderExcludedNamespaces` | `[]` | Namespaces excluded even if otherwise eligible (checked before the allow-lists). |
 | `$wgPageReaderExcludedPages` | `[]` | Pages excluded even if otherwise eligible (same match rule as `Pages`). |
 | `$wgPageReaderLoadEverywhere` | `false` | If true, ignore `Namespaces`/`TitlePrefixes`/`Pages` and load on every page that passes the other gates. |
-| `$wgPageReaderContentClass` | `"pagereader-content"` | Marker class an editor can put on any element, anywhere in an article, to mark it as the read-aloud content. |
+| `$wgPageReaderContentClass` | `"kids-readaloud"` | Marker class an editor can put on any element, anywhere in an article, to mark it as the read-aloud content. Default matches the class Saintapedia's existing Kids articles already use (ported from the prior Common.js implementation), not an invented name — see §8. |
 | `$wgPageReaderContentSelector` | `""` | Fallback CSS selector used when no marker element is found. Empty = no fallback (button doesn't appear). |
 | `$wgPageReaderSkipSelectors` | `.infobox, .navbox, .toc, .thumb, .reflist, .mw-editsection, .printfooter, .catlinks` | Elements stripped from a clone of the content root before reading `textContent`. |
 | `$wgPageReaderButtonPlacement` | `"before-content"` | One of `before-content` \| `after-heading` \| `top-of-content`. |
@@ -144,43 +144,59 @@ Mirrors `NearMeConfigService` exactly:
 ## 6. Eligibility (`PageReaderEligibility`)
 
 A small, stateless helper — `isEligible( Title $title, string $action,
-Config $config, ?ConfigOverlay $overlay = null ): bool` — kept separate
-from `Hooks::onBeforePageDisplay` specifically so it's unit-testable
-without constructing a full `OutputPage`/`RequestContext`. Checked in
-order (cheapest/most-decisive first):
+Config $config ): bool` — kept separate from `Hooks::onBeforePageDisplay`
+specifically so it's unit-testable without constructing a full
+`OutputPage`/`RequestContext`, and deliberately DB-free (does not check
+the `__NOPAGEREADER__` page property itself — see §7). Checked in order
+(cheapest/most-decisive first):
 
-1. `!$config->enabled` → false.
+1. `!$config->get('PageReaderEnabled')` → false.
 2. `$action` not in `Actions` → false.
 3. `$title->getContentModel()` not in `ContentModels` → false.
 4. `$title->isTalkPage() && !IncludeTalk` → false.
 5. `$title->isRedirect()` → false.
-6. Page has the `__NOPAGEREADER__` property set (see §7) → false.
-7. `$title->getNamespace()` in `ExcludedNamespaces` → false.
-8. `$title` matches (exact-or-subpage) any `ExcludedPages` entry → false.
-9. `LoadEverywhere` → true.
-10. Else: `$title->getNamespace()` in `Namespaces`, OR
-    `getPrefixedText()` starts with any `TitlePrefixes` entry, OR
-    `$title` matches (exact-or-subpage) any `Pages` entry → true.
-11. Else → false.
+6. `$title->getNamespace()` in `ExcludedNamespaces` → false.
+7. `$title` matches (exact-or-subpage) any `ExcludedPages` entry → false.
+8. `LoadEverywhere` → true.
+9. Else: `$title->getNamespace()` in `Namespaces`, OR
+   `getPrefixedText()` starts with any `TitlePrefixes` entry, OR
+   `$title` matches (exact-or-subpage) any `Pages` entry → true.
+10. Else → false.
 
-`Hooks::onBeforePageDisplay` calls this once; on true, calls
-`$out->addModules( 'ext.pageReader' )`.
+`Hooks::onBeforePageDisplay` resolves the on-wiki overlay (§5) first,
+builds a `HashConfig` from the overlay-merged namespaces/prefixes/
+pages/excluded-lists/loadEverywhere plus the LocalSettings-only
+actions/contentModels/includeTalk, and calls `isEligible()` once against
+that combined config — this is what makes an on-wiki config edit
+actually change eligibility, not just JS-side content targeting. Only
+if that returns true does it perform the `__NOPAGEREADER__` page-props
+lookup (§7); only if that's also clear does it call
+`$out->addModules( 'ext.pageReader' )` and `$out->addJsConfigVars(...)`
+with the overlay-merged content-targeting values.
 
 ## 7. Per-page editor opt-out
 
 A `__NOPAGEREADER__` behavior switch (same mechanism core uses for
-`__NOTOC__`/`__NOGALLERY__`): registered via `ParserFirstCallInit`,
-detected during parse, sets a page property
-(`$parser->getOutput()->setPageProperty( 'noPageReader', '1' )`). In
-`BeforePageDisplay`, `$out->getProperty( 'noPageReader' )` is checked as
-eligibility step 6 above. This lets a content editor turn the button off
-on one specific page directly from wikitext — no config access or
-LocalSettings/wiki-JSON edit required.
+`__NOTOC__`/`__NOGALLERY__`): the magic word ID `nopagereader` is
+registered via the `GetDoubleUnderscoreIDs` hook. Registering it there
+is sufficient — MediaWiki core's `Parser::handleDoubleUnderscore`
+automatically calls `ParserOutput::setUnsortedPageProperty( 'nopagereader' )`
+for every registered double-underscore ID found during parsing (verified
+against MediaWiki 1.43.9 core, `includes/parser/Parser.php:4139-4141`),
+so no `ParserFirstCallInit` hook or manual `setPageProperty()` call is
+needed. In `Hooks::onBeforePageDisplay`, the page property is read via
+`MediaWikiServices::getInstance()->getPageProps()->getProperties( $title, 'nopagereader' )`
+— a DB-backed lookup, deliberately run only for titles that already
+pass the cheap, in-memory `PageReaderEligibility` check (not folded into
+that class itself, to keep it DB-free). This lets a content editor turn
+the button off on one specific page directly from wikitext — no config
+access or LocalSettings/wiki-JSON edit required.
 
 ## 8. Content targeting
 
 The JS looks for an element with class `$wgPageReaderContentClass`
-(default `pagereader-content`) anywhere in the rendered content root
+(default `kids-readaloud`, matching Saintapedia's existing Kids
+articles) anywhere in the rendered content root
 (`document` on initial load, or the `$content` node passed by
 `wikipage.content`). Because an editor controls where that class goes
 in their own wikitext, this is inherently "the button can go anywhere
@@ -250,17 +266,19 @@ only carry the new `.pagereader-button` class.
 "ext.pageReader": {
   "scripts": [ "resources/ext.pageReader.js" ],
   "styles": [ "resources/ext.pageReader.css" ],
-  "dependencies": [ "mediawiki.util" ],
   "messages": [
     "pagereader-button-label",
     "pagereader-button-label-stop"
-  ],
-  "targets": [ "desktop", "mobile" ]
+  ]
 }
 ```
 
-`targets` includes `mobile` (Minerva) deliberately — Kids traffic is
-phone-heavy, and there's no reason to exclude it.
+No `dependencies` — the JS uses only `mw.config`/`mw.msg`/`mw.hook`,
+already guaranteed by ResourceLoader's core startup module, not
+`mediawiki.util` (which was declared but never referenced; removed). No
+`targets` field either — per the `extension.json` schema itself, this
+field has been unused since MediaWiki 1.42; module loading on mobile
+(Minerva) needs no special declaration.
 
 ## 11. Explicitly deferred (not v1)
 

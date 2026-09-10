@@ -12,19 +12,31 @@
 		return Array.isArray( configured ) ? configured : [];
 	}
 
+	function removeAll( clone, selector ) {
+		var matches = clone.querySelectorAll( selector );
+		for ( var i = 0; i < matches.length; i++ ) {
+			if ( matches[ i ].parentNode ) {
+				matches[ i ].parentNode.removeChild( matches[ i ] );
+			}
+		}
+	}
+
 	function buildSpeechText( contentRoot ) {
 		var clone = contentRoot.cloneNode( true );
 		// The button itself can end up inside contentRoot (the 'top-of-content'
 		// placement inserts it as content's first child) — always strip it so
 		// its own label is never read aloud, regardless of $wgPageReaderSkipSelectors.
-		var ownButton = clone.querySelectorAll( '.pagereader-button' );
-		for ( var j = 0; j < ownButton.length; j++ ) {
-			ownButton[ j ].parentNode.removeChild( ownButton[ j ] );
-		}
+		removeAll( clone, '.pagereader-button' );
 		getSkipSelectors().forEach( function ( selector ) {
-			var matches = clone.querySelectorAll( selector );
-			for ( var i = 0; i < matches.length; i++ ) {
-				matches[ i ].parentNode.removeChild( matches[ i ] );
+			try {
+				removeAll( clone, selector );
+			} catch ( e ) {
+				// One invalid entry in the on-wiki-editable skip-selector list
+				// (a sysop typo) must not abort speech entirely — skip just
+				// that selector and keep applying the rest.
+				if ( window.console && console.warn ) {
+					console.warn( 'PageReader: skipping invalid skip selector', selector, e );
+				}
 			}
 		} );
 		return clone.textContent;
@@ -112,7 +124,15 @@
 		var candidate;
 		if ( placement === 'after-heading' ) {
 			var heading = document.getElementById( 'firstHeading' );
-			candidate = heading && heading.nextElementSibling;
+			// Must mirror insertButton()'s own fallback exactly: when there is
+			// no #firstHeading (or it has no parentNode), insertButton() falls
+			// through to the 'before-content' behavior below, so the existing
+			// button (if any) is content's previous sibling, not the heading's.
+			if ( heading && heading.parentNode ) {
+				candidate = heading.nextElementSibling;
+			} else {
+				candidate = content.previousElementSibling;
+			}
 		} else if ( placement === 'top-of-content' ) {
 			candidate = content.firstElementChild;
 		} else {

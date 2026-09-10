@@ -87,8 +87,9 @@ button on that one page.
 | Check | Expected |
 |-------|----------|
 | Load a `Kids:` page | Button appears once, toggles label/class/`aria-pressed` |
-| Load `Portal:Kids` and `Portal:Kids/AnySubpage` | Button appears |
-| Load a page named `Portal:KidsCorner` | Button does **not** appear |
+| Load `Portal:Kids` | Button appears (the page itself carries the `kids-readaloud` marker) |
+| Load a `Portal:Kids/` subpage generated via a path-page template | Module requested (`ext.pageReader` in `RLPAGEMODULES`), but the button appears only if that specific page's content actually contains `class="kids-readaloud"` — most path pages don't, by design (see spec §8); eligible-but-marker-less is expected, not a regression |
+| Load a page named `Portal:KidsCorner` | Button does **not** appear (module not requested — outside the exact-or-subpage match) |
 | Load any non-Kids page | `ext.pageReader` module not requested (check network panel / `mw.loader.getState('ext.pageReader')`) |
 | Add `__NOPAGEREADER__` to a Kids page | Button no longer appears |
 | Edit `MediaWiki:PageReader-config` to add a namespace | Takes effect without a restart |

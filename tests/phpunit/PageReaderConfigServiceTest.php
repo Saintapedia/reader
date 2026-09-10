@@ -56,6 +56,18 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 		$this->assertSame( [ 'Kids:' ], $effective['titlePrefixes'] );
 	}
 
+	public function testNonNumericNamespaceEntryIsDroppedNotCoercedToMain(): void {
+		// A bare intval("Kids") would silently become 0 (NS_MAIN) -- a sysop
+		// typo must not turn into "read-aloud on every main-namespace page".
+		$this->baseConfig();
+		$this->editPage( 'MediaWiki:PageReader-config', '{"namespaces": [1004, "Kids", -1]}' );
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( [ 1004, -1 ], $effective['namespaces'] );
+	}
+
 	public function testMalformedJsonFallsBackToLocalSettings(): void {
 		$this->baseConfig();
 		$this->editPage( 'MediaWiki:PageReader-config', 'not valid json {{{' );
