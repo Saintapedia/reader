@@ -1,0 +1,11 @@
+{
+	"name": "pagereader",
+	"private": true,
+	"description": "Behavioral test tooling for the PageReader MediaWiki extension's JS (resources/ext.pageReader.js has no PHPUnit coverage of its own)",
+	"scripts": {
+		"test": "node tests/node/ext.pageReader.test.js"
+	},
+	"devDependencies": {
+		"jsdom": "^30.0.1"
+	}
+}
