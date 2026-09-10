@@ -99,14 +99,16 @@ button on that one page.
 
 Per [USWDS's component accessibility guidance](https://designsystem.digital.gov/documentation/accessibility/) (USWDS has no dedicated read-aloud/TTS component — "VoiceOver" in their docs is Apple's screen reader, used below as a testing tool, not a UI pattern):
 
-| Check | Expected |
-|-------|----------|
-| Tab to the button | Visible focus outline appears |
-| Activate with keyboard (Space or Enter) | Same as a mouse click — starts/stops speech |
-| Manual pass with VoiceOver (macOS/iOS) or JAWS (Windows) | Button's label and pressed/toggled state are announced correctly |
-| Automated scan with [pa11y](https://pa11y.org/) or [aXe](https://www.deque.com/axe/) against a Kids page | No new violations introduced by the button |
+| Check | Expected | Status |
+|-------|----------|--------|
+| Tab to the button | Visible focus outline appears | Automated (`npm run test:a11y` — WCAG AA contrast check on the focus outline) |
+| axe-core structural/ARIA scan, idle + speaking states | No violations | Automated (`npm run test:a11y`) |
+| WCAG 2 AA color contrast, all button states (idle/hover/speaking/focus) | All ≥ threshold | Automated (`npm run test:a11y`) — see README's Testing section for why this runs as an exact calculation rather than through axe-core directly |
+| Activate with keyboard (Space or Enter) | Same as a mouse click — starts/stops speech | Manual — native `<button>` semantics, not separately verified in a real browser this pass |
+| Manual pass with VoiceOver (macOS/iOS) or JAWS (Windows) | Button's label and pressed/toggled state are announced correctly | **Still manual** — needs a real screen reader, not automatable from here |
+| Automated scan with [pa11y](https://pa11y.org/) against a real deployed Kids page | No new violations introduced by the button | Optional extra pass once deployed; the jsdom-based `npm run test:a11y` scan already covers the button's own markup |
 
-The button already meets USWDS's baseline button guidance by construction — real `<button>` markup (not a styled `<div>`), a 44×44px minimum touch target, and a visible `:focus-visible` outline — so this checklist is a verification pass, not expected to surface new work.
+The button already meets USWDS's baseline button guidance by construction — real `<button>` markup (not a styled `<div>`), a 44×44px minimum touch target, and a visible `:focus-visible` outline — so this checklist was largely a verification pass, and most of it is now regression-tested automatically. The VoiceOver/JAWS row is the one genuine gap left before calling this checklist fully closed.
 
 ## After verification
 

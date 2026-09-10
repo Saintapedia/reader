@@ -3,9 +3,12 @@
 	"private": true,
 	"description": "Behavioral test tooling for the PageReader MediaWiki extension's JS (resources/ext.pageReader.js has no PHPUnit coverage of its own)",
 	"scripts": {
-		"test": "node tests/node/ext.pageReader.test.js"
+		"test": "npm run test:behavior && npm run test:a11y",
+		"test:behavior": "node tests/node/ext.pageReader.test.js",
+		"test:a11y": "node tests/node/accessibility.test.js"
 	},
 	"devDependencies": {
+		"axe-core": "^4.13.0",
 		"jsdom": "^30.0.1"
 	}
 }
