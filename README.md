@@ -37,10 +37,30 @@ and a prefix written with an underscore (`"Kids:Foo_bar"`) will not match
 the prefixed text form (`Kids:Foo bar`, space). Write prefixes exactly as
 they should appear in `Title::getPrefixedText()` output.
 
+## Testing
+
+PHP: `tests/phpunit/` (run via MediaWiki core's PHPUnit — see DEPLOY.md's
+local dev notes).
+
+JS: `resources/ext.pageReader.js` has no PHPUnit coverage of its own, so
+`tests/node/ext.pageReader.test.js` loads it into a real DOM via
+[jsdom](https://github.com/jsdom/jsdom) (mocking `mw.config`/`mw.msg`/
+`mw.hook` and `speechSynthesis`) and actually clicks the button —
+covering button placement/insertion, the duplicate-button guard across
+all three `PageReaderButtonPlacement` modes, label/`aria-pressed`/class
+toggling, skip-selector filtering (including a malformed selector, which
+must not abort speech), and the content-fallback-selector path:
+
+```bash
+npm install
+npm test
+```
+
 ## Requirements
 
 - MediaWiki **≥ 1.43.0**
 - PHP version required by that MediaWiki release
+- Node.js (for `npm test` only — not needed to run the extension itself)
 
 ## Installation
 
