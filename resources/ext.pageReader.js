@@ -355,8 +355,18 @@
 	// firing can still find it and locate the existing button via
 	// findFollowingSibling(), the same pattern used for the voice select and
 	// pause button.
-	function findButtonAnchor( root ) {
-		return root.querySelector ? root.querySelector( '.pagereader-button-anchor' ) : null;
+	//
+	// Deliberately searches the whole document, not just root: initPageReader()
+	// sets root from the wikipage.content hook's own $content argument, which
+	// MediaWiki core fires as a narrower fragment (e.g. just the content div)
+	// on some re-renders, not always the same #mw-content-text wrapper used on
+	// first load. The anchor is documented as placeable anywhere on the page,
+	// independent of where the read-aloud content itself is marked, so a
+	// root-scoped search would both miss an anchor placed outside root and
+	// fail to find the already-inserted button next to it -- inserting a
+	// second one via the placement-based fallback.
+	function findButtonAnchor() {
+		return document.querySelector( '.pagereader-button-anchor' );
 	}
 
 	// content.previousElementSibling (used below for 'before-content' and the
@@ -464,7 +474,7 @@
 			}
 
 			var placement = mw.config.get( 'wgPageReaderButtonPlacement' ) || 'before-content';
-			var anchor = findButtonAnchor( root );
+			var anchor = findButtonAnchor();
 			var button = findExistingButton( content, placement, anchor ) || insertButton( content, placement, anchor );
 
 			bindButton( button, content );
