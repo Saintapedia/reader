@@ -39,10 +39,21 @@ for the full history and rationale).
   female, best-effort name matching against the browser's available
   voices) appears next to the button — a reader's own choice there is
   remembered per-browser via `localStorage` and overrides the site
-  default.
+  default. `$wgPageReaderPreferredVoices` lets a sysop curate specific
+  known-good voice names per gender (e.g. macOS's "Samantha", which
+  doesn't have "female" in its name) that take priority over the
+  generic name match.
 - A pause/resume button appears next to the voice select once speech
   starts (feature-detected — omitted entirely on a browser without
   `speechSynthesis.pause`/`resume` support).
+- Read-along highlighting: the article is split into sentences
+  client-side and spoken as a chain of utterances, highlighting the
+  sentence currently playing (sentence-level, not word-level — chosen
+  for reliability across browsers, since `speechSynthesis`'s
+  word-boundary events are notoriously inconsistent). Controlled by
+  `$wgPageReaderHighlightEnabled` (default `true`); disabling it falls
+  back to a single utterance for the whole article with no
+  highlighting.
 
 ## Title-prefix matching rules
 

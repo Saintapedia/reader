@@ -33,7 +33,9 @@ class PageReaderConfigService {
 	 *   buttonPlacement:string,
 	 *   voicePitch:float,
 	 *   voiceRate:float,
-	 *   voiceGender:string
+	 *   voiceGender:string,
+	 *   highlightEnabled:bool,
+	 *   preferredVoices:array{female:array<int,string>,male:array<int,string>}
 	 * }
 	 */
 	public function getEffectiveConfig( Config $mainConfig ): array {
@@ -51,6 +53,8 @@ class PageReaderConfigService {
 			'voicePitch' => $mainConfig->get( 'PageReaderVoicePitch' ),
 			'voiceRate' => $mainConfig->get( 'PageReaderVoiceRate' ),
 			'voiceGender' => $mainConfig->get( 'PageReaderVoiceGender' ),
+			'highlightEnabled' => $mainConfig->get( 'PageReaderHighlightEnabled' ),
+			'preferredVoices' => $mainConfig->get( 'PageReaderPreferredVoices' ),
 		];
 
 		$overlay = $this->getResolvedOverlay( $mainConfig );
@@ -58,7 +62,19 @@ class PageReaderConfigService {
 			return $defaults;
 		}
 
-		return array_merge( $defaults, $overlay );
+		$effective = array_merge( $defaults, $overlay );
+
+		// array_merge() above is shallow: an overlay that only curates
+		// 'female' names must not wipe out a LocalSettings 'male' list (or
+		// vice versa) just because 'preferredVoices' as a whole is one key.
+		if ( isset( $overlay['preferredVoices'] ) ) {
+			$effective['preferredVoices'] = array_merge(
+				$defaults['preferredVoices'],
+				$overlay['preferredVoices']
+			);
+		}
+
+		return $effective;
 	}
 
 	/**
@@ -164,22 +180,17 @@ class PageReaderConfigService {
 
 		foreach ( [ 'titlePrefixes', 'pages', 'excludedPages', 'skipSelectors' ] as $key ) {
 			if ( isset( $raw[$key] ) && is_array( $raw[$key] ) ) {
-				$overlay[$key] = array_values( array_filter( array_map(
-					static function ( $entry ) {
-						return is_string( $entry ) ? trim( $entry ) : null;
-					},
-					$raw[$key]
-				), static function ( $entry ) {
-					return $entry !== null && $entry !== '';
-				} ) );
+				$overlay[$key] = self::sanitizeStringList( $raw[$key] );
 			}
 		}
 
 		// Only accept an actual JSON boolean (true/false, unquoted) — a loose
 		// (bool) cast would silently turn a sysop's typo'd "false" (string)
 		// into true, the opposite of a graceful degrade on malformed input.
-		if ( isset( $raw['loadEverywhere'] ) && is_bool( $raw['loadEverywhere'] ) ) {
-			$overlay['loadEverywhere'] = $raw['loadEverywhere'];
+		foreach ( [ 'loadEverywhere', 'highlightEnabled' ] as $key ) {
+			if ( isset( $raw[$key] ) && is_bool( $raw[$key] ) ) {
+				$overlay[$key] = $raw[$key];
+			}
 		}
 
 		foreach ( [ 'contentClass', 'contentSelector', 'buttonPlacement' ] as $key ) {
@@ -212,7 +223,49 @@ class PageReaderConfigService {
 			}
 		}
 
+		// Per-gender, so a sysop can curate just 'female' (or just 'male')
+		// without needing to also restate the other -- getEffectiveConfig()
+		// merges this against the LocalSettings default per-gender rather
+		// than wholesale-replacing it. Gender keys are case-folded (like
+		// voiceGender above) since a sysop typing "Female" here would
+		// otherwise silently do nothing.
+		if ( isset( $raw['preferredVoices'] ) && is_array( $raw['preferredVoices'] ) ) {
+			$preferredVoicesRaw = array_change_key_case( $raw['preferredVoices'], CASE_LOWER );
+			$preferred = [];
+			foreach ( [ 'female', 'male' ] as $gender ) {
+				// Must actually be an array: sanitizeStringList() otherwise
+				// coerces e.g. a typo'd string value to [], which the
+				// per-gender merge in getEffectiveConfig() would then use to
+				// wipe out this gender's LocalSettings list entirely instead
+				// of leaving it untouched.
+				if ( isset( $preferredVoicesRaw[$gender] ) && is_array( $preferredVoicesRaw[$gender] ) ) {
+					$preferred[$gender] = self::sanitizeStringList( $preferredVoicesRaw[$gender] );
+				}
+			}
+			if ( $preferred !== [] ) {
+				$overlay['preferredVoices'] = $preferred;
+			}
+		}
+
 		return $overlay;
+	}
+
+	/**
+	 * @param mixed $value
+	 * @return array<int,string>
+	 */
+	private static function sanitizeStringList( $value ): array {
+		if ( !is_array( $value ) ) {
+			return [];
+		}
+		return array_values( array_filter( array_map(
+			static function ( $entry ) {
+				return is_string( $entry ) ? trim( $entry ) : null;
+			},
+			$value
+		), static function ( $entry ) {
+			return $entry !== null && $entry !== '';
+		} ) );
 	}
 
 	/**

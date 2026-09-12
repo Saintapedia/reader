@@ -14,6 +14,10 @@
 - Add a voice-gender select next to the button; a reader's choice is
   remembered per-browser via `localStorage` and overrides the site
   default.
+- Add `$wgPageReaderPreferredVoices` (per-gender curated voice-name
+  list, overridable via `MediaWiki:PageReader-config`) checked before
+  the generic female/male name match, for voices that don't self-label
+  gender in their name.
 - Add a pause/resume button, shown only while speech is in progress
   and feature-detected (omitted on a browser without
   `speechSynthesis.pause`/`resume` support).
@@ -24,3 +28,8 @@
   `Template:ReadAloudButton` on-wiki templates (see DEPLOY.md) so
   editors can mark content and control button placement with plain
   wikitext instead of raw HTML.
+- Add read-along sentence highlighting: the article is split into
+  sentences client-side and spoken as a chain of utterances,
+  highlighting the sentence currently playing (chosen over word-level
+  tracking for cross-browser reliability). Controlled by
+  `$wgPageReaderHighlightEnabled` (default `true`).
