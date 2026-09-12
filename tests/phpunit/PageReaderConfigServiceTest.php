@@ -34,6 +34,7 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 			'PageReaderVoicePitch' => 1.15,
 			'PageReaderVoiceRate' => 1.05,
 			'PageReaderVoiceGender' => 'auto',
+			'PageReaderPreferredVoices' => [ 'female' => [ 'Samantha' ], 'male' => [ 'Daniel' ] ],
 		] );
 	}
 
@@ -194,5 +195,59 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
 
 		$this->assertSame( 'auto', $effective['voiceGender'] );
+	}
+
+	public function testPreferredVoicesOverlayIsUsedVerbatim(): void {
+		$this->baseConfig();
+		$this->editPage(
+			'MediaWiki:PageReader-config',
+			'{"preferredVoices": {"female": ["Zira"], "male": ["David"]}}'
+		);
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( [ 'female' => [ 'Zira' ], 'male' => [ 'David' ] ], $effective['preferredVoices'] );
+	}
+
+	public function testPreferredVoicesOverlayForOneGenderDoesNotClobberTheOther(): void {
+		// A sysop curating just the female list (having discovered a good
+		// female voice on a new device) must not silently wipe out the
+		// LocalSettings-configured male list -- these are logically
+		// independent settings sharing one JSON key.
+		$this->baseConfig();
+		$this->editPage( 'MediaWiki:PageReader-config', '{"preferredVoices": {"female": ["Zira"]}}' );
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( [ 'Zira' ], $effective['preferredVoices']['female'] );
+		$this->assertSame( [ 'Daniel' ], $effective['preferredVoices']['male'] );
+	}
+
+	public function testPreferredVoicesOverlayDropsNonStringEntries(): void {
+		$this->baseConfig();
+		$this->editPage(
+			'MediaWiki:PageReader-config',
+			'{"preferredVoices": {"female": ["Zira", 42, "", "  Aria  "]}}'
+		);
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( [ 'Zira', 'Aria' ], $effective['preferredVoices']['female'] );
+	}
+
+	public function testMalformedPreferredVoicesOverlayFallsBackToLocalSettings(): void {
+		$this->baseConfig();
+		$this->editPage( 'MediaWiki:PageReader-config', '{"preferredVoices": "not an object"}' );
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame(
+			[ 'female' => [ 'Samantha' ], 'male' => [ 'Daniel' ] ],
+			$effective['preferredVoices']
+		);
 	}
 }

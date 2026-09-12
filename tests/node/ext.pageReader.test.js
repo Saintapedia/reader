@@ -32,6 +32,7 @@ function makeMw( configOverrides, msgOverrides ) {
 		wgPageReaderVoicePitch: 1.15,
 		wgPageReaderVoiceRate: 1.05,
 		wgPageReaderVoiceGender: 'female',
+		wgPageReaderPreferredVoices: { female: [], male: [] },
 	}, configOverrides || {} );
 	const messages = Object.assign( {
 		'pagereader-button-label': 'Read this page aloud',
@@ -328,6 +329,79 @@ test( "voiceGender 'female' picks the first voice whose name contains 'female'",
 	const { window, speechState } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
 		{ wgPageReaderVoiceGender: 'female' },
+		null,
+		voices
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Google UK English Female' );
+} );
+
+test( 'a curated preferredVoices name wins over the generic female/male substring match', function () {
+	const voices = [
+		{ name: 'Samantha' },
+		{ name: 'Google UK English Female' },
+	];
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{
+			wgPageReaderVoiceGender: 'female',
+			wgPageReaderPreferredVoices: { female: [ 'Samantha' ], male: [] },
+		},
+		null,
+		voices
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Samantha' );
+} );
+
+test( 'preferredVoices matches earlier names in the list first, regardless of voice order', function () {
+	const voices = [
+		{ name: 'Zira' },
+		{ name: 'Samantha' },
+	];
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{
+			wgPageReaderVoiceGender: 'female',
+			// "Samantha" is listed first even though "Zira" is the first
+			// voice in the device's list -- the preference order must win.
+			wgPageReaderPreferredVoices: { female: [ 'Samantha', 'Zira' ], male: [] },
+		},
+		null,
+		voices
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Samantha' );
+} );
+
+test( 'preferredVoices with no match on this device falls back to the generic substring match', function () {
+	const voices = [ { name: 'Google UK English Female' } ];
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{
+			wgPageReaderVoiceGender: 'female',
+			wgPageReaderPreferredVoices: { female: [ 'Samantha' ], male: [] },
+		},
+		null,
+		voices
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Google UK English Female' );
+} );
+
+test( 'an empty/missing preferredVoices config does not change existing behavior', function () {
+	const voices = [ { name: 'Google UK English Female' } ];
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderVoiceGender: 'female', wgPageReaderPreferredVoices: undefined },
 		null,
 		voices
 	);

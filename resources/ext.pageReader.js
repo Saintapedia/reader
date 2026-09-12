@@ -90,12 +90,45 @@
 		// falls back correctly without this.
 	}
 
+	// Checked in order -- the first name fragment (from
+	// $wgPageReaderPreferredVoices, sysop-curated) to match ANY available
+	// voice wins, even if a later voice in the list would also match an
+	// earlier fragment. Lets a sysop rank curated names by preference.
+	function findPreferredVoice( voices, names ) {
+		if ( !Array.isArray( names ) ) {
+			return null;
+		}
+		for ( var n = 0; n < names.length; n++ ) {
+			var fragment = ( names[ n ] || '' ).toLowerCase();
+			if ( !fragment ) {
+				continue;
+			}
+			for ( var i = 0; i < voices.length; i++ ) {
+				var name = ( voices[ i ].name || '' ).toLowerCase();
+				if ( name.indexOf( fragment ) !== -1 ) {
+					return voices[ i ];
+				}
+			}
+		}
+		return null;
+	}
+
 	function pickVoice( gender ) {
 		if ( gender !== 'female' && gender !== 'male' ) {
 			return null;
 		}
 		refreshCachedVoices();
 		var voices = cachedVoices;
+
+		// Curated names (e.g. macOS "Samantha", Windows "Zira") take
+		// priority over the generic name-contains-female/male match below,
+		// since many good voices don't self-label gender in their name.
+		var preferredConfig = mw.config.get( 'wgPageReaderPreferredVoices' );
+		var preferredMatch = findPreferredVoice( voices, preferredConfig && preferredConfig[ gender ] );
+		if ( preferredMatch ) {
+			return preferredMatch;
+		}
+
 		for ( var i = 0; i < voices.length; i++ ) {
 			var name = ( voices[ i ].name || '' ).toLowerCase();
 			if ( gender === 'female' && name.indexOf( 'female' ) !== -1 ) {
