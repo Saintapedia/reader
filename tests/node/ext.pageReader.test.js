@@ -223,7 +223,10 @@ test( 'top-of-content: button is first child and is excluded from speech text', 
 	content.firstElementChild.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 	assert.strictEqual( speechState.spoken.length, 1 );
 	assert.ok( !speechState.spoken[ 0 ].includes( 'Read this page aloud' ) );
-	assert.ok( speechState.spoken[ 0 ].includes( 'Story text here.' ) );
+	assert.strictEqual(
+		speechState.spoken[ 0 ], 'Story text here.',
+		'voice select/label/pause button text must not leak into speech when they sit inside contentRoot'
+	);
 } );
 
 test( 'after-heading: falls back to before-content when #firstHeading is missing', function () {

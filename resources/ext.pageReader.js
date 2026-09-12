@@ -23,10 +23,14 @@
 
 	function buildSpeechText( contentRoot ) {
 		var clone = contentRoot.cloneNode( true );
-		// The button itself can end up inside contentRoot (the 'top-of-content'
-		// placement inserts it as content's first child) — always strip it so
-		// its own label is never read aloud, regardless of $wgPageReaderSkipSelectors.
+		// The button and its controls can end up inside contentRoot (the
+		// 'top-of-content' placement inserts them as content's first children)
+		// -- always strip them so their own labels/options are never read
+		// aloud, regardless of $wgPageReaderSkipSelectors.
 		removeAll( clone, '.pagereader-button' );
+		removeAll( clone, '.pagereader-voice-select' );
+		removeAll( clone, '.pagereader-visually-hidden' );
+		removeAll( clone, '.pagereader-pause-button' );
 		getSkipSelectors().forEach( function ( selector ) {
 			try {
 				removeAll( clone, selector );
