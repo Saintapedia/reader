@@ -620,6 +620,52 @@ test( 'duplicate-button guard still finds the button with an extra unrelated sib
 	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
 } );
 
+test( 'a button anchor overrides the configured placement, wherever it sits on the page', function () {
+	const { window } = buildDom(
+		'<nav><span class="pagereader-button-anchor" style="display:none"></span></nav>' +
+			'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		// Configured for top-of-content, but the anchor should win instead.
+		{ wgPageReaderButtonPlacement: 'top-of-content' }
+	);
+	const anchor = window.document.querySelector( '.pagereader-button-anchor' );
+	const button = window.document.querySelector( '.pagereader-button' );
+	assert.ok( button, 'button should exist' );
+	assert.strictEqual( anchor.nextElementSibling, button, 'button should sit immediately after the anchor' );
+	assert.strictEqual(
+		window.document.querySelector( '.kids-readaloud' ).firstElementChild, null,
+		'content root should be untouched -- top-of-content placement must not apply when an anchor is present'
+	);
+} );
+
+test( 'button anchor: re-firing wikipage.content does not duplicate the button', function () {
+	const { window, refire } = buildDom(
+		'<span class="pagereader-button-anchor" style="display:none"></span>' +
+			'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>'
+	);
+	refire();
+	refire();
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
+} );
+
+test( 'button anchor: voice select and pause button are still created next to the anchor-placed button', function () {
+	const { window } = buildDom(
+		'<span class="pagereader-button-anchor" style="display:none"></span>' +
+			'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>'
+	);
+	const button = window.document.querySelector( '.pagereader-button' );
+	assert.strictEqual( button.nextElementSibling.className, 'pagereader-voice-select' );
+	assert.ok( window.document.querySelector( '.pagereader-pause-button' ) );
+} );
+
+test( 'no anchor on the page: falls back to the configured placement unchanged', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderButtonPlacement: 'top-of-content' }
+	);
+	const content = window.document.querySelector( '.kids-readaloud' );
+	assert.strictEqual( content.firstElementChild.className, 'pagereader-button' );
+} );
+
 console.log( '\n' + passed + ' passed, ' + failed + ' failed' );
 if ( failed > 0 ) {
 	console.log( '\nFailures:\n' + failures.join( '\n' ) );

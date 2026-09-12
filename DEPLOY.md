@@ -83,6 +83,32 @@ breaking the site.
 Add `__NOPAGEREADER__` anywhere in a page's wikitext to suppress the
 button on that one page.
 
+## Editor-friendly templates (optional, on-wiki content, not code)
+
+Editors can mark read-aloud content and control button placement with
+plain wikitext instead of raw HTML — these are wiki `Template:` pages,
+not part of this repo, and need to be created once per wiki (the bot
+account cannot create wiki content pages any more than it can edit
+`MediaWiki:Common.js`/`Common.css` — see "After verification" below).
+
+**`Template:ReadAloud/start`** (content: `<div class="kids-readaloud">`)
+and **`Template:ReadAloud/end`** (content: `</div>`) — a pair rather
+than a single parameterized template, so wikitext inside (links,
+formatting) never needs pipe-escaping:
+```
+{{ReadAloud/start}}
+Some story text here, with [[links]] and '''formatting''' working normally.
+{{ReadAloud/end}}
+```
+
+**`Template:ReadAloudButton`** (content:
+`<span class="pagereader-button-anchor" style="display:none"></span>`)
+— optional; placing this anywhere on a page overrides where the button
+appears on that page, taking priority over `$wgPageReaderButtonPlacement`.
+The button (and voice select/pause button) is inserted immediately
+after wherever this template sits, independent of where the
+`ReadAloud/start`/`end` pair marks the actual content.
+
 ## Smoke checklist
 
 | Check | Expected |
@@ -93,6 +119,8 @@ button on that one page.
 | Load a page named `Portal:KidsCorner` | Button does **not** appear (module not requested — outside the exact-or-subpage match) |
 | Load any non-Kids page | `ext.pageReader` module not requested (check network panel / `mw.loader.getState('ext.pageReader')`) |
 | Add `__NOPAGEREADER__` to a Kids page | Button no longer appears |
+| Wrap content with `{{ReadAloud/start}}`/`{{ReadAloud/end}}` on any eligible page | Button appears per placement config, speech covers only the wrapped content |
+| Add `{{ReadAloudButton}}` elsewhere on the same page | Button (and voice select/pause button) moves to right after the template, overriding the configured placement |
 | Edit `MediaWiki:PageReader-config` to add a namespace | Takes effect without a restart |
 | Save invalid JSON to `MediaWiki:PageReader-config` | Falls back to LocalSettings defaults, no error |
 | Voice select (female/male/auto) next to the button | Present, labeled, defaults to female, persists choice across reloads via `localStorage` |

@@ -347,6 +347,18 @@
 		return null;
 	}
 
+	// {{ReadAloudButton}} emits a hidden <span class="pagereader-button-anchor">
+	// marker -- its mere presence on the page (anywhere, not necessarily next
+	// to the read-aloud content) is an explicit per-page override of where
+	// the button goes, taking priority over $wgPageReaderButtonPlacement.
+	// Left in the DOM permanently (never removed) so a repeat wikipage.content
+	// firing can still find it and locate the existing button via
+	// findFollowingSibling(), the same pattern used for the voice select and
+	// pause button.
+	function findButtonAnchor( root ) {
+		return root.querySelector ? root.querySelector( '.pagereader-button-anchor' ) : null;
+	}
+
 	// content.previousElementSibling (used below for 'before-content' and the
 	// 'after-heading' no-heading fallback) is no longer the button itself --
 	// insertButton() also places the voice select/label/pause button between
@@ -370,7 +382,14 @@
 	// place insertButton() puts the button, for each placement mode — otherwise
 	// a repeat wikipage.content firing (e.g. an AJAX content refresh) won't find
 	// the existing button and will insert another one.
-	function findExistingButton( content, placement ) {
+	function findExistingButton( content, placement, anchor ) {
+		// An anchor (from {{ReadAloudButton}}, see findButtonAnchor()) always
+		// wins over the configured placement mode when present -- it's an
+		// explicit, per-page, editor-controlled override, the same way
+		// __NOPAGEREADER__ already overrides site config per-page.
+		if ( anchor ) {
+			return findFollowingSibling( anchor, 'pagereader-button' );
+		}
 		if ( placement === 'after-heading' ) {
 			var heading = document.getElementById( 'firstHeading' );
 			// Must mirror insertButton()'s own fallback exactly: when there is
@@ -391,12 +410,14 @@
 		return findPrecedingButton( content );
 	}
 
-	function insertButton( content, placement ) {
+	function insertButton( content, placement, anchor ) {
 		var button = document.createElement( 'button' );
 		button.className = 'pagereader-button';
 		button.setAttribute( 'aria-pressed', 'false' );
 
-		if ( placement === 'after-heading' ) {
+		if ( anchor ) {
+			anchor.parentNode.insertBefore( button, anchor.nextSibling );
+		} else if ( placement === 'after-heading' ) {
 			var heading = document.getElementById( 'firstHeading' );
 			if ( heading && heading.parentNode ) {
 				heading.parentNode.insertBefore( button, heading.nextSibling );
@@ -443,7 +464,8 @@
 			}
 
 			var placement = mw.config.get( 'wgPageReaderButtonPlacement' ) || 'before-content';
-			var button = findExistingButton( content, placement ) || insertButton( content, placement );
+			var anchor = findButtonAnchor( root );
+			var button = findExistingButton( content, placement, anchor ) || insertButton( content, placement, anchor );
 
 			bindButton( button, content );
 		} catch ( e ) {

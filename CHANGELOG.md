@@ -17,3 +17,10 @@
 - Add a pause/resume button, shown only while speech is in progress
   and feature-detected (omitted on a browser without
   `speechSynthesis.pause`/`resume` support).
+- Add a `.pagereader-button-anchor` marker: placing one anywhere on a
+  page overrides where the button appears on that page, taking
+  priority over `$wgPageReaderButtonPlacement`. Paired with the
+  `Template:ReadAloud/start` / `Template:ReadAloud/end` /
+  `Template:ReadAloudButton` on-wiki templates (see DEPLOY.md) so
+  editors can mark content and control button placement with plain
+  wikitext instead of raw HTML.
