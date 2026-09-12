@@ -133,6 +133,9 @@ const pauseText = findHex( pauseBody, 'color' );
 const pauseHoverBackground = findHex( pauseHoverBody, 'background' );
 const pauseFocusOutline = findHex( pauseFocusBody, 'outline' );
 
+const highlightBody = extractRuleBody( CSS_SRC, '\\.pagereader-highlight' );
+const highlightBackground = findHex( highlightBody, 'background' );
+
 test( 'CSS color extraction found all expected declarations', function () {
 	assert.ok( idleBackground, 'idle background not found in .pagereader-button' );
 	assert.ok( idleText, 'idle text color not found in .pagereader-button' );
@@ -147,6 +150,22 @@ test( 'CSS color extraction found all expected declarations', function () {
 	assert.ok( pauseText, 'text color not found in .pagereader-pause-button' );
 	assert.ok( pauseHoverBackground, 'hover background not found in .pagereader-pause-button:hover' );
 	assert.ok( pauseFocusOutline, 'focus outline color not found in .pagereader-pause-button:focus-visible' );
+	assert.ok( highlightBackground, 'background not found in .pagereader-highlight' );
+} );
+
+// .pagereader-highlight deliberately sets only a background, not a text
+// color -- it inherits whatever color the surrounding article text
+// already has, so an exact contrast guarantee isn't possible here for
+// every theme (same as native text-selection highlighting). This checks
+// contrast against Saintapedia's actual Kids-page ink color (#1A1A1A,
+// from Common.css's --kids-ink) as the one concrete case this extension
+// already assumes elsewhere.
+test( 'read-along highlight background meets WCAG AA contrast against Kids-page ink color (>= 4.5:1)', function () {
+	const ratio = contrastRatio( '#1A1A1A', highlightBackground );
+	assert.ok(
+		ratio >= 4.5,
+		`ratio was ${ratio.toFixed( 2 )}:1 (Kids-page text #1A1A1A on highlight background ${highlightBackground})`
+	);
 } );
 
 // This rule exists specifically so [hidden] wins regardless of whether a
@@ -228,6 +247,7 @@ function makeMw( configOverrides ) {
 		wgPageReaderContentSelector: '',
 		wgPageReaderSkipSelectors: [ '.infobox' ],
 		wgPageReaderButtonPlacement: 'before-content',
+		wgPageReaderHighlightEnabled: true,
 	}, configOverrides || {} );
 	const messages = {
 		'pagereader-button-label': 'Read this page aloud',
@@ -268,7 +288,13 @@ function buildPage() {
 	const window = dom.window;
 	const mwSetup = makeMw();
 	window.mw = mwSetup.mwObj;
-	window.speechSynthesis = { cancel: () => {}, speak: () => {}, pause: () => {}, resume: () => {}, getVoices: () => [] };
+	window.speechSynthesis = {
+		cancel: () => {},
+		speak: ( u ) => { window.__lastUtterance = u; },
+		pause: () => {},
+		resume: () => {},
+		getVoices: () => [],
+	};
 	window.SpeechSynthesisUtterance = function ( text ) { this.text = text; };
 	window.eval( SCRIPT_SRC );
 	mwSetup.fireHook( 'wikipage.content' );
@@ -318,6 +344,19 @@ asyncTest( 'axe-core: no violations in idle state', async () => {
 			.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 		window.document.querySelector( '.pagereader-pause-button' )
 			.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+		const results = await runAxe( window, '#mw-content-text' );
+		assert.strictEqual(
+			results.violations.length, 0,
+			results.violations.map( ( v ) => `${v.id}: ${v.description}` ).join( '; ' )
+		);
+	} );
+} ).then( () => {
+	return asyncTest( 'axe-core: no violations with a read-along sentence highlight active', async () => {
+		const window = buildPage();
+		window.document.querySelector( '.pagereader-button' )
+			.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+		window.__lastUtterance.onstart();
+		assert.ok( window.document.querySelector( '.pagereader-highlight' ), 'highlight mark should be present' );
 		const results = await runAxe( window, '#mw-content-text' );
 		assert.strictEqual(
 			results.violations.length, 0,
