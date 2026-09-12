@@ -108,7 +108,10 @@
 		return null;
 	}
 
-	var VOICE_GENDER_VALUES = [ 'auto', 'female', 'male' ];
+	// Order here drives both the select's option order and validation, but
+	// not which one applies by default -- that's wgPageReaderVoiceGender
+	// (extension.json default: 'female').
+	var VOICE_GENDER_VALUES = [ 'female', 'male', 'auto' ];
 	var VOICE_STORAGE_KEY = 'pagereader-voice-gender';
 
 	function isValidGender( value ) {

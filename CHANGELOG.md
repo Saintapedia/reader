@@ -8,9 +8,9 @@
   ResourceLoader module.
 - Add `$wgPageReaderVoicePitch`/`$wgPageReaderVoiceRate` (default to a
   brighter, gentler pace than a browser's flat default TTS voice) and
-  `$wgPageReaderVoiceGender` (auto/female/male, best-effort name
-  matching against the browser's available voices), all overridable via
-  `MediaWiki:PageReader-config`.
+  `$wgPageReaderVoiceGender` (female/male/auto, defaulting to female,
+  best-effort name matching against the browser's available voices),
+  all overridable via `MediaWiki:PageReader-config`.
 - Add a voice-gender select next to the button; a reader's choice is
   remembered per-browser via `localStorage` and overrides the site
   default.
