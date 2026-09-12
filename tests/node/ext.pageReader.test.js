@@ -137,8 +137,11 @@ function buildDom( bodyHtml, configOverrides, msgOverrides, voices, seedLocalSto
 		speechState: speech.state,
 		speechSynthesis: speech.speechSynthesis,
 		consoleWarnings: consoleWarnings,
-		// Simulates a second AJAX-driven wikipage.content firing on the same DOM.
-		refire: function () { mwSetup.fireHook( 'wikipage.content' ); },
+		// Simulates a second AJAX-driven wikipage.content firing on the same
+		// DOM. Optionally takes a contentNode to simulate MediaWiki core
+		// firing with a narrower $content fragment than the initial full-page
+		// fire -- real re-renders don't always pass the same node.
+		refire: function ( contentNode ) { mwSetup.fireHook( 'wikipage.content', contentNode ); },
 	};
 }
 
@@ -761,6 +764,142 @@ test( 'duplicate-button guard still finds the button with an extra unrelated sib
 
 	refire();
 	refire();
+
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
+} );
+
+test( 'a button anchor overrides the configured placement, wherever it sits on the page', function () {
+	const { window } = buildDom(
+		'<nav><span class="pagereader-button-anchor" style="display:none"></span></nav>' +
+			'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		// Configured for top-of-content, but the anchor should win instead.
+		{ wgPageReaderButtonPlacement: 'top-of-content' }
+	);
+	const anchor = window.document.querySelector( '.pagereader-button-anchor' );
+	const button = window.document.querySelector( '.pagereader-button' );
+	assert.ok( button, 'button should exist' );
+	assert.strictEqual( anchor.nextElementSibling, button, 'button should sit immediately after the anchor' );
+	assert.strictEqual(
+		window.document.querySelector( '.kids-readaloud' ).firstElementChild, null,
+		'content root should be untouched -- top-of-content placement must not apply when an anchor is present'
+	);
+} );
+
+test( 'button anchor: re-firing wikipage.content does not duplicate the button', function () {
+	const { window, refire } = buildDom(
+		'<span class="pagereader-button-anchor" style="display:none"></span>' +
+			'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>'
+	);
+	refire();
+	refire();
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
+} );
+
+test( 'button anchor: voice select and pause button are still created next to the anchor-placed button', function () {
+	const { window } = buildDom(
+		'<span class="pagereader-button-anchor" style="display:none"></span>' +
+			'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>'
+	);
+	const button = window.document.querySelector( '.pagereader-button' );
+	assert.strictEqual( button.nextElementSibling.className, 'pagereader-voice-select' );
+	assert.ok( window.document.querySelector( '.pagereader-pause-button' ) );
+} );
+
+test( 'no anchor on the page: falls back to the configured placement unchanged', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderButtonPlacement: 'top-of-content' }
+	);
+	const content = window.document.querySelector( '.kids-readaloud' );
+	assert.strictEqual( content.firstElementChild.className, 'pagereader-button' );
+} );
+
+test( 'button anchor overrides before-content placement', function () {
+	const { window } = buildDom(
+		'<span class="pagereader-button-anchor" style="display:none"></span>' +
+			'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>'
+	);
+	const anchor = window.document.querySelector( '.pagereader-button-anchor' );
+	const button = window.document.querySelector( '.pagereader-button' );
+	assert.strictEqual( anchor.nextElementSibling, button );
+} );
+
+test( 'button anchor overrides after-heading placement', function () {
+	const { window } = buildDom(
+		'<span class="pagereader-button-anchor" style="display:none"></span>' +
+			'<h1 id="firstHeading">A Saint</h1>' +
+			'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderButtonPlacement: 'after-heading' }
+	);
+	const anchor = window.document.querySelector( '.pagereader-button-anchor' );
+	const button = window.document.querySelector( '.pagereader-button' );
+	assert.strictEqual( anchor.nextElementSibling, button );
+	const heading = window.document.getElementById( 'firstHeading' );
+	assert.notStrictEqual(
+		heading.nextElementSibling, button,
+		'after-heading placement must not apply when an anchor is present'
+	);
+} );
+
+test( 'button anchor: an extra sibling between the anchor and the button is still found on re-fire', function () {
+	const { window, refire } = buildDom(
+		'<span class="pagereader-button-anchor" style="display:none"></span>' +
+			'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>'
+	);
+	const anchor = window.document.querySelector( '.pagereader-button-anchor' );
+	const intruder = window.document.createElement( 'div' );
+	intruder.textContent = 'unrelated widget';
+	anchor.parentNode.insertBefore( intruder, anchor.nextSibling );
+
+	refire();
+	refire();
+
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
+} );
+
+// Regression: MediaWiki core's wikipage.content hook doesn't always fire
+// with the same $content node -- a later re-render can pass a narrower
+// fragment (e.g. just the content wrapper) than the initial full-page fire.
+// The anchor is documented as placeable anywhere on the page, independent
+// of where the content itself is marked, so a re-fire scoped to just the
+// content wrapper (which doesn't contain the anchor or the already-inserted
+// button) must still find both via a document-wide search, not silently
+// fall through to the placement-based lookup and insert a second button.
+test( 'button anchor: a nested re-fire scoped to just the content wrapper does not duplicate the button -- top-of-content', function () {
+	const { window, refire } = buildDom(
+		'<nav><span class="pagereader-button-anchor" style="display:none"></span></nav>' +
+			'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderButtonPlacement: 'top-of-content' }
+	);
+	const contentNode = window.document.querySelector( '.kids-readaloud' );
+	refire( contentNode );
+	refire( contentNode );
+
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
+} );
+
+test( 'button anchor: a nested re-fire scoped to just the content wrapper does not duplicate the button -- after-heading', function () {
+	const { window, refire } = buildDom(
+		'<nav><span class="pagereader-button-anchor" style="display:none"></span></nav>' +
+			'<h1 id="firstHeading">A Saint</h1>' +
+			'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderButtonPlacement: 'after-heading' }
+	);
+	const contentNode = window.document.querySelector( '.kids-readaloud' );
+	refire( contentNode );
+	refire( contentNode );
+
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
+} );
+
+test( 'button anchor: a nested re-fire scoped to just the content wrapper does not duplicate the button -- before-content', function () {
+	const { window, refire } = buildDom(
+		'<nav><span class="pagereader-button-anchor" style="display:none"></span></nav>' +
+			'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>'
+	);
+	const contentNode = window.document.querySelector( '.kids-readaloud' );
+	refire( contentNode );
+	refire( contentNode );
 
 	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
 } );

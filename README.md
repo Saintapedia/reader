@@ -25,6 +25,13 @@ for the full history and rationale).
   `class="kids-readaloud"` (configurable via `$wgPageReaderContentClass`
   — the default matches existing Saintapedia Kids content) on any
   wrapper element, and the button is inserted immediately before it.
+- Editor-friendly wikitext templates (not code — see DEPLOY.md) let any
+  editor mark read-aloud content and control button placement without
+  touching raw HTML or LocalSettings: a `{{ReadAloud/start}}` /
+  `{{ReadAloud/end}}` pair marks the content boundary anywhere on any
+  page, and an optional `{{ReadAloudButton}}` marker overrides where
+  the button itself appears on that page, taking priority over the
+  site-wide `$wgPageReaderButtonPlacement` setting.
 - Speech pitch/rate default to a brighter, gentler pace than a
   browser's flat default TTS voice (`$wgPageReaderVoicePitch` /
   `$wgPageReaderVoiceRate`, both sysop-tunable), and a voice-gender
