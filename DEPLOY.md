@@ -71,7 +71,14 @@ breaking the site.
 **Overridable keys**: `namespaces`, `titlePrefixes`, `pages`,
 `excludedNamespaces`, `excludedPages`, `loadEverywhere`, `contentClass`,
 `contentSelector`, `skipSelectors`, `buttonPlacement`, `voicePitch`,
-`voiceRate`, `voiceGender`.
+`voiceRate`, `voiceGender`, `preferredVoices`. `preferredVoices` is
+`{"female": [...], "male": [...]}` — curating just one gender doesn't
+clobber the other's LocalSettings value, e.g.:
+```json
+{
+	"preferredVoices": { "female": ["Samantha", "Zira"] }
+}
+```
 
 **LocalSettings-only, cannot be overridden here**: `PageReaderEnabled`,
 `PageReaderActions`, `PageReaderContentModels`, `PageReaderIncludeTalk`,
