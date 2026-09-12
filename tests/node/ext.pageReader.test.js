@@ -33,6 +33,7 @@ function makeMw( configOverrides, msgOverrides ) {
 		wgPageReaderVoiceRate: 1.05,
 		wgPageReaderVoiceGender: 'female',
 		wgPageReaderHighlightEnabled: true,
+		wgPageReaderPreferredVoices: { female: [], male: [] },
 	}, configOverrides || {} );
 	const messages = Object.assign( {
 		'pagereader-button-label': 'Read this page aloud',
@@ -336,6 +337,149 @@ test( "voiceGender 'female' picks the first voice whose name contains 'female'",
 		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 
 	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Google UK English Female' );
+} );
+
+test( 'a curated preferredVoices name wins over the generic female/male substring match', function () {
+	const voices = [
+		{ name: 'Samantha' },
+		{ name: 'Google UK English Female' },
+	];
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{
+			wgPageReaderVoiceGender: 'female',
+			wgPageReaderPreferredVoices: { female: [ 'Samantha' ], male: [] },
+		},
+		null,
+		voices
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Samantha' );
+} );
+
+test( 'preferredVoices matches earlier names in the list first, regardless of voice order', function () {
+	const voices = [
+		{ name: 'Zira' },
+		{ name: 'Samantha' },
+	];
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{
+			wgPageReaderVoiceGender: 'female',
+			// "Samantha" is listed first even though "Zira" is the first
+			// voice in the device's list -- the preference order must win.
+			wgPageReaderPreferredVoices: { female: [ 'Samantha', 'Zira' ], male: [] },
+		},
+		null,
+		voices
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Samantha' );
+} );
+
+test( 'preferredVoices with no match on this device falls back to the generic substring match', function () {
+	const voices = [ { name: 'Google UK English Female' } ];
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{
+			wgPageReaderVoiceGender: 'female',
+			wgPageReaderPreferredVoices: { female: [ 'Samantha' ], male: [] },
+		},
+		null,
+		voices
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Google UK English Female' );
+} );
+
+test( 'an empty/missing preferredVoices config does not change existing behavior', function () {
+	const voices = [ { name: 'Google UK English Female' } ];
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderVoiceGender: 'female', wgPageReaderPreferredVoices: undefined },
+		null,
+		voices
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Google UK English Female' );
+} );
+
+test( 'preferredVoices matches as a substring of a real device voice name, not only exact equality', function () {
+	// The documented Windows example is fragment "Zira" against a voice
+	// actually named "Microsoft Zira Desktop" -- an implementation that
+	// only checked exact equality would pass every other preferredVoices
+	// test (they all happen to use exact-match fixtures) while failing on
+	// every real device.
+	const voices = [
+		{ name: 'Microsoft Zira Desktop - English (United States)' },
+		{ name: 'Google UK English Female' },
+	];
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{
+			wgPageReaderVoiceGender: 'female',
+			// Also mixed-case, to prove the match is case-insensitive.
+			wgPageReaderPreferredVoices: { female: [ 'ZIRA' ], male: [] },
+		},
+		null,
+		voices
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual(
+		speechState.utterances[ 0 ].voice.name,
+		'Microsoft Zira Desktop - English (United States)'
+	);
+} );
+
+test( 'a male preferredVoices fragment also matches by substring', function () {
+	const voices = [ { name: 'Microsoft David Desktop' }, { name: 'Google UK English Male' } ];
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{
+			wgPageReaderVoiceGender: 'male',
+			wgPageReaderPreferredVoices: { female: [], male: [ 'David' ] },
+		},
+		null,
+		voices
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Microsoft David Desktop' );
+} );
+
+test( 'a non-string entry in preferredVoices is skipped, not thrown on -- speech must still work', function () {
+	// $wgPageReaderPreferredVoices (LocalSettings) reaches the client
+	// unsanitized, unlike the overlay path. A bare (names[n] || '') check
+	// lets a truthy non-string (e.g. 42) through to .toLowerCase(), which
+	// throws -- caught by the click handler's try/catch, aborting before
+	// speak() is ever reached. The reader would hear nothing at all, not
+	// even the generic female/male fallback.
+	const voices = [ { name: 'Samantha' }, { name: 'Google UK English Female' } ];
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{
+			wgPageReaderVoiceGender: 'female',
+			wgPageReaderPreferredVoices: { female: [ 42, 'Samantha' ], male: [] },
+		},
+		null,
+		voices
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances.length, 1, 'speech must not abort' );
+	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Samantha' );
 } );
 
 test( "voiceGender 'male' does not match a name containing 'female'", function () {

@@ -46,6 +46,7 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 			'PageReaderVoiceRate' => 0.9,
 			'PageReaderVoiceGender' => 'male',
 			'PageReaderHighlightEnabled' => true,
+			'PageReaderPreferredVoices' => [ 'female' => [ 'Samantha' ], 'male' => [ 'Daniel' ] ],
 			'PageReaderConfigPage' => '',
 		] );
 	}
@@ -93,6 +94,10 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 		$this->assertSame( 0.9, $jsVars['wgPageReaderVoiceRate'] );
 		$this->assertSame( 'male', $jsVars['wgPageReaderVoiceGender'] );
 		$this->assertTrue( $jsVars['wgPageReaderHighlightEnabled'] );
+		$this->assertSame(
+			[ 'female' => [ 'Samantha' ], 'male' => [ 'Daniel' ] ],
+			$jsVars['wgPageReaderPreferredVoices']
+		);
 	}
 
 	public function testNonKidsPageDoesNotLoadModule(): void {
@@ -159,5 +164,22 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 
 		$jsVars = $out->getJsConfigVars();
 		$this->assertFalse( $jsVars['wgPageReaderHighlightEnabled'] );
+	}
+
+	public function testOnWikiOverlayPreferredVoicesReachesJsConfigVars(): void {
+		$this->overridePageReaderConfig( [ 'PageReaderConfigPage' => 'PageReader-config' ] );
+		$this->editPage(
+			'MediaWiki:PageReader-config',
+			'{"preferredVoices": {"female": ["Zira"]}}'
+		);
+		$this->editPage( 'Kids:Overlay preferred voices test', 'Some content.' );
+
+		$out = $this->runBeforePageDisplay( 'Kids:Overlay preferred voices test' );
+
+		$jsVars = $out->getJsConfigVars();
+		// Overlay curated only 'female'; 'male' must still carry through
+		// from the LocalSettings fixture, not disappear.
+		$this->assertSame( [ 'Zira' ], $jsVars['wgPageReaderPreferredVoices']['female'] );
+		$this->assertSame( [ 'Daniel' ], $jsVars['wgPageReaderPreferredVoices']['male'] );
 	}
 }
