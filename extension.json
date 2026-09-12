@@ -92,9 +92,21 @@
 			"value": "before-content",
 			"description": "One of: before-content, after-heading, top-of-content."
 		},
+		"PageReaderVoicePitch": {
+			"value": 1.15,
+			"description": "SpeechSynthesisUtterance pitch. Web Speech API range is 0-2 (1 is the browser default); values are clamped into range client-side. Higher values sound brighter and less monotone."
+		},
+		"PageReaderVoiceRate": {
+			"value": 0.92,
+			"description": "SpeechSynthesisUtterance rate. Web Speech API range is 0.1-10 (1 is the browser default); values are clamped into range client-side. Slightly below 1 for a calmer, more gentle pace."
+		},
+		"PageReaderVoiceGender": {
+			"value": "auto",
+			"description": "One of: auto, female, male. auto leaves voice selection untouched (browser default voice). female/male select the first available system voice whose name contains that word (case-insensitive); if the device has no such voice, falls back silently to the default voice. Coverage depends entirely on the browser/OS voice list."
+		},
 		"PageReaderConfigPage": {
 			"value": "PageReader-config",
-			"description": "MediaWiki:-namespace JSON page (requires editinterface to edit) that can override: namespaces, titlePrefixes, pages, excludedNamespaces, excludedPages, loadEverywhere, contentClass, contentSelector, skipSelectors, buttonPlacement. PageReaderEnabled, PageReaderActions, PageReaderContentModels, and PageReaderIncludeTalk are LocalSettings-only and cannot be overridden here. Empty string disables the overlay."
+			"description": "MediaWiki:-namespace JSON page (requires editinterface to edit) that can override: namespaces, titlePrefixes, pages, excludedNamespaces, excludedPages, loadEverywhere, contentClass, contentSelector, skipSelectors, buttonPlacement, voicePitch, voiceRate, voiceGender. PageReaderEnabled, PageReaderActions, PageReaderContentModels, and PageReaderIncludeTalk are LocalSettings-only and cannot be overridden here. Empty string disables the overlay."
 		}
 	},
 	"ResourceFileModulePaths": {
@@ -107,7 +119,13 @@
 			"styles": [ "resources/ext.pageReader.css" ],
 			"messages": [
 				"pagereader-button-label",
-				"pagereader-button-label-stop"
+				"pagereader-button-label-stop",
+				"pagereader-voice-label",
+				"pagereader-voice-auto",
+				"pagereader-voice-female",
+				"pagereader-voice-male",
+				"pagereader-pause-label",
+				"pagereader-pause-label-resume"
 			]
 		}
 	}

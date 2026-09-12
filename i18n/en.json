@@ -4,5 +4,11 @@
 	},
 	"pagereader-desc": "Adds a configurable, conditionally-loaded read-aloud button (\"Saintapedia Reader\")",
 	"pagereader-button-label": "Read this page aloud",
-	"pagereader-button-label-stop": "Stop reading"
+	"pagereader-button-label-stop": "Stop reading",
+	"pagereader-voice-label": "Voice",
+	"pagereader-voice-auto": "Auto",
+	"pagereader-voice-female": "Female",
+	"pagereader-voice-male": "Male",
+	"pagereader-pause-label": "Pause reading",
+	"pagereader-pause-label-resume": "Resume reading"
 }

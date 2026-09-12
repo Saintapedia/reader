@@ -162,6 +162,12 @@ function makeMw( configOverrides ) {
 	const messages = {
 		'pagereader-button-label': 'Read this page aloud',
 		'pagereader-button-label-stop': 'Stop reading',
+		'pagereader-voice-label': 'Voice',
+		'pagereader-voice-auto': 'Auto',
+		'pagereader-voice-female': 'Female',
+		'pagereader-voice-male': 'Male',
+		'pagereader-pause-label': 'Pause reading',
+		'pagereader-pause-label-resume': 'Resume reading',
 	};
 	const hooks = {};
 	return {
@@ -192,7 +198,7 @@ function buildPage() {
 	const window = dom.window;
 	const mwSetup = makeMw();
 	window.mw = mwSetup.mwObj;
-	window.speechSynthesis = { cancel: () => {}, speak: () => {} };
+	window.speechSynthesis = { cancel: () => {}, speak: () => {}, pause: () => {}, resume: () => {}, getVoices: () => [] };
 	window.SpeechSynthesisUtterance = function ( text ) { this.text = text; };
 	window.eval( SCRIPT_SRC );
 	mwSetup.fireHook( 'wikipage.content' );
@@ -228,6 +234,19 @@ asyncTest( 'axe-core: no violations in idle state', async () => {
 	return asyncTest( 'axe-core: no violations in speaking state', async () => {
 		const window = buildPage();
 		window.document.querySelector( '.pagereader-button' )
+			.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+		const results = await runAxe( window, '#mw-content-text' );
+		assert.strictEqual(
+			results.violations.length, 0,
+			results.violations.map( ( v ) => `${v.id}: ${v.description}` ).join( '; ' )
+		);
+	} );
+} ).then( () => {
+	return asyncTest( 'axe-core: no violations in paused state', async () => {
+		const window = buildPage();
+		window.document.querySelector( '.pagereader-button' )
+			.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+		window.document.querySelector( '.pagereader-pause-button' )
 			.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 		const results = await runAxe( window, '#mw-content-text' );
 		assert.strictEqual(
