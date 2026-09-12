@@ -31,7 +31,7 @@ function makeMw( configOverrides, msgOverrides ) {
 		wgPageReaderButtonPlacement: 'before-content',
 		wgPageReaderVoicePitch: 1.15,
 		wgPageReaderVoiceRate: 1.05,
-		wgPageReaderVoiceGender: 'auto',
+		wgPageReaderVoiceGender: 'female',
 	}, configOverrides || {} );
 	const messages = Object.assign( {
 		'pagereader-button-label': 'Read this page aloud',
@@ -391,11 +391,28 @@ test( 'voice select is inserted next to the button with an associated visible-to
 	assert.ok( select, 'voice select should exist' );
 	assert.strictEqual(
 		select.querySelectorAll( 'option' ).length, 3,
-		'should have auto/female/male options'
+		'should have female/male/auto options'
 	);
 	const label = window.document.querySelector( 'label[for="' + select.id + '"]' );
 	assert.ok( label, 'label should be associated with the select via for/id' );
 	assert.strictEqual( label.textContent, 'Voice' );
+} );
+
+test( 'voice select options are ordered female, male, auto', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>'
+	);
+	const select = window.document.querySelector( '.pagereader-voice-select' );
+	const values = Array.prototype.map.call( select.options, function ( o ) { return o.value; } );
+	assert.deepStrictEqual( values, [ 'female', 'male', 'auto' ] );
+} );
+
+test( 'voice select defaults to female when no site override or stored preference exists', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>'
+	);
+	const select = window.document.querySelector( '.pagereader-voice-select' );
+	assert.strictEqual( select.value, 'female' );
 } );
 
 test( 'voice select initial value falls back to the site-configured default gender', function () {

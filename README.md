@@ -28,10 +28,11 @@ for the full history and rationale).
 - Speech pitch/rate default to a brighter, gentler pace than a
   browser's flat default TTS voice (`$wgPageReaderVoicePitch` /
   `$wgPageReaderVoiceRate`, both sysop-tunable), and a voice-gender
-  select (`$wgPageReaderVoiceGender`: auto/female/male, best-effort
-  name matching against the browser's available voices) appears next
-  to the button — a reader's own choice there is remembered
-  per-browser via `localStorage` and overrides the site default.
+  select (`$wgPageReaderVoiceGender`: female/male/auto, defaulting to
+  female, best-effort name matching against the browser's available
+  voices) appears next to the button — a reader's own choice there is
+  remembered per-browser via `localStorage` and overrides the site
+  default.
 - A pause/resume button appears next to the voice select once speech
   starts (feature-detected — omitted entirely on a browser without
   `speechSynthesis.pause`/`resume` support).

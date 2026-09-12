@@ -95,7 +95,7 @@ button on that one page.
 | Add `__NOPAGEREADER__` to a Kids page | Button no longer appears |
 | Edit `MediaWiki:PageReader-config` to add a namespace | Takes effect without a restart |
 | Save invalid JSON to `MediaWiki:PageReader-config` | Falls back to LocalSettings defaults, no error |
-| Voice select (auto/female/male) next to the button | Present, labeled, persists choice across reloads via `localStorage` |
+| Voice select (female/male/auto) next to the button | Present, labeled, defaults to female, persists choice across reloads via `localStorage` |
 | Pick "female" or "male" then click the button (on a browser/OS with a matching named voice) | Speech uses a voice whose name contains that word; silently falls back to the default voice if none match |
 | Click the button to start speech | A pause button appears next to the voice select |
 | Click pause, then again to resume | Speech pauses via `speechSynthesis.pause()`, then resumes via `resume()`; label toggles Pause ⇄ Resume |
