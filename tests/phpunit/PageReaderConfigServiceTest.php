@@ -250,4 +250,30 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 			$effective['preferredVoices']
 		);
 	}
+
+	public function testNonArrayPerGenderPreferredVoicesValueDoesNotClobberLocalSettings(): void {
+		// A bare sanitizeStringList() call on a non-array value (e.g. a
+		// sysop typing "Zira" instead of ["Zira"]) coerces to [] -- which
+		// the per-gender merge would then use to wipe out this gender's
+		// LocalSettings list entirely, the opposite of "curating just one
+		// gender doesn't clobber the other."
+		$this->baseConfig();
+		$this->editPage( 'MediaWiki:PageReader-config', '{"preferredVoices": {"female": "Zira"}}' );
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( [ 'Samantha' ], $effective['preferredVoices']['female'] );
+		$this->assertSame( [ 'Daniel' ], $effective['preferredVoices']['male'] );
+	}
+
+	public function testPreferredVoicesGenderKeysAreCaseFolded(): void {
+		$this->baseConfig();
+		$this->editPage( 'MediaWiki:PageReader-config', '{"preferredVoices": {"Female": ["Zira"]}}' );
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( [ 'Zira' ], $effective['preferredVoices']['female'] );
+	}
 }

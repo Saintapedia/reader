@@ -99,7 +99,15 @@
 			return null;
 		}
 		for ( var n = 0; n < names.length; n++ ) {
-			var fragment = ( names[ n ] || '' ).toLowerCase();
+			// $wgPageReaderPreferredVoices (LocalSettings) reaches here
+			// unsanitized, unlike the overlay path -- a non-string entry
+			// (e.g. a stray number) must be skipped, not thrown on, or the
+			// whole click handler's try/catch aborts before speak() is ever
+			// reached and the reader hears nothing at all.
+			if ( typeof names[ n ] !== 'string' ) {
+				continue;
+			}
+			var fragment = names[ n ].toLowerCase();
 			if ( !fragment ) {
 				continue;
 			}

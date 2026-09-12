@@ -222,12 +222,20 @@ class PageReaderConfigService {
 		// Per-gender, so a sysop can curate just 'female' (or just 'male')
 		// without needing to also restate the other -- getEffectiveConfig()
 		// merges this against the LocalSettings default per-gender rather
-		// than wholesale-replacing it.
+		// than wholesale-replacing it. Gender keys are case-folded (like
+		// voiceGender above) since a sysop typing "Female" here would
+		// otherwise silently do nothing.
 		if ( isset( $raw['preferredVoices'] ) && is_array( $raw['preferredVoices'] ) ) {
+			$preferredVoicesRaw = array_change_key_case( $raw['preferredVoices'], CASE_LOWER );
 			$preferred = [];
 			foreach ( [ 'female', 'male' ] as $gender ) {
-				if ( isset( $raw['preferredVoices'][$gender] ) ) {
-					$preferred[$gender] = self::sanitizeStringList( $raw['preferredVoices'][$gender] );
+				// Must actually be an array: sanitizeStringList() otherwise
+				// coerces e.g. a typo'd string value to [], which the
+				// per-gender merge in getEffectiveConfig() would then use to
+				// wipe out this gender's LocalSettings list entirely instead
+				// of leaving it untouched.
+				if ( isset( $preferredVoicesRaw[$gender] ) && is_array( $preferredVoicesRaw[$gender] ) ) {
+					$preferred[$gender] = self::sanitizeStringList( $preferredVoicesRaw[$gender] );
 				}
 			}
 			if ( $preferred !== [] ) {
