@@ -31,6 +31,9 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 			'PageReaderContentSelector' => '',
 			'PageReaderSkipSelectors' => [ '.infobox' ],
 			'PageReaderButtonPlacement' => 'before-content',
+			'PageReaderVoicePitch' => 1.15,
+			'PageReaderVoiceRate' => 1.05,
+			'PageReaderVoiceGender' => 'auto',
 		] );
 	}
 
@@ -124,5 +127,72 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 		$parsed = $service->parseJsonConfig( "<nowiki>\n{\"loadEverywhere\": true}\n</nowiki>" );
 
 		$this->assertSame( [ 'loadEverywhere' => true ], $parsed );
+	}
+
+	public function testOverlayOverridesVoiceSettings(): void {
+		$this->baseConfig();
+		$this->editPage(
+			'MediaWiki:PageReader-config',
+			'{"voicePitch": 1.4, "voiceRate": 0.9, "voiceGender": "female"}'
+		);
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( 1.4, $effective['voicePitch'] );
+		$this->assertSame( 0.9, $effective['voiceRate'] );
+		$this->assertSame( 'female', $effective['voiceGender'] );
+	}
+
+	public function testOutOfRangeVoicePitchAndRateAreClamped(): void {
+		$this->baseConfig();
+		$this->editPage(
+			'MediaWiki:PageReader-config',
+			'{"voicePitch": 9, "voiceRate": -3}'
+		);
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( 2.0, $effective['voicePitch'] );
+		$this->assertSame( 0.1, $effective['voiceRate'] );
+	}
+
+	public function testNonNumericVoicePitchIsDroppedNotCoercedToZero(): void {
+		// A bare (float) cast on "fast" would silently become 0.0, which is
+		// a valid (if silent) pitch value -- must fall back to LocalSettings
+		// instead of masquerading as an intentional zero pitch.
+		$this->baseConfig();
+		$this->editPage( 'MediaWiki:PageReader-config', '{"voicePitch": "fast"}' );
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( 1.15, $effective['voicePitch'] );
+	}
+
+	public function testVoiceGenderOverlayIsCaseFolded(): void {
+		$this->baseConfig();
+		$this->editPage( 'MediaWiki:PageReader-config', '{"voiceGender": "Female"}' );
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( 'female', $effective['voiceGender'] );
+	}
+
+	public function testInvalidVoiceGenderOverlayIsDroppedNotPassedThrough(): void {
+		// The client only recognizes exact auto/female/male and silently
+		// falls back to 'auto' on anything else -- an unvalidated overlay
+		// value like "woman" would look like it saved successfully on-wiki
+		// while quietly doing nothing client-side. Must fall back to the
+		// LocalSettings default here instead of shipping the bad value.
+		$this->baseConfig();
+		$this->editPage( 'MediaWiki:PageReader-config', '{"voiceGender": "woman"}' );
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( 'auto', $effective['voiceGender'] );
 	}
 }

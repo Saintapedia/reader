@@ -42,6 +42,9 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 			'PageReaderContentSelector' => '',
 			'PageReaderSkipSelectors' => [ '.infobox' ],
 			'PageReaderButtonPlacement' => 'before-content',
+			'PageReaderVoicePitch' => 1.2,
+			'PageReaderVoiceRate' => 0.9,
+			'PageReaderVoiceGender' => 'male',
 			'PageReaderConfigPage' => '',
 		] );
 	}
@@ -85,6 +88,9 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 		$this->assertSame( 'kids-readaloud', $jsVars['wgPageReaderContentClass'] );
 		$this->assertSame( 'before-content', $jsVars['wgPageReaderButtonPlacement'] );
 		$this->assertSame( [ '.infobox' ], $jsVars['wgPageReaderSkipSelectors'] );
+		$this->assertSame( 1.2, $jsVars['wgPageReaderVoicePitch'] );
+		$this->assertSame( 0.9, $jsVars['wgPageReaderVoiceRate'] );
+		$this->assertSame( 'male', $jsVars['wgPageReaderVoiceGender'] );
 	}
 
 	public function testNonKidsPageDoesNotLoadModule(): void {
@@ -124,5 +130,21 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 
 		$jsVars = $out->getJsConfigVars();
 		$this->assertSame( 'overlay-class', $jsVars['wgPageReaderContentClass'] );
+	}
+
+	public function testOnWikiOverlayVoiceSettingsReachJsConfigVars(): void {
+		$this->overridePageReaderConfig( [ 'PageReaderConfigPage' => 'PageReader-config' ] );
+		$this->editPage(
+			'MediaWiki:PageReader-config',
+			'{"voicePitch": 1.4, "voiceRate": 0.8, "voiceGender": "female"}'
+		);
+		$this->editPage( 'Kids:Overlay voice settings test', 'Some content.' );
+
+		$out = $this->runBeforePageDisplay( 'Kids:Overlay voice settings test' );
+
+		$jsVars = $out->getJsConfigVars();
+		$this->assertSame( 1.4, $jsVars['wgPageReaderVoicePitch'] );
+		$this->assertSame( 0.8, $jsVars['wgPageReaderVoiceRate'] );
+		$this->assertSame( 'female', $jsVars['wgPageReaderVoiceGender'] );
 	}
 }

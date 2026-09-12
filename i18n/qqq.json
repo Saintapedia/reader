@@ -4,5 +4,11 @@
 	},
 	"pagereader-desc": "{{desc|name=PageReader|url=https://github.com/Saintapedia/reader}}",
 	"pagereader-button-label": "Label on the read-aloud button before it starts speaking.",
-	"pagereader-button-label-stop": "Label on the read-aloud button while it is speaking, to stop it."
+	"pagereader-button-label-stop": "Label on the read-aloud button while it is speaking, to stop it.",
+	"pagereader-voice-label": "Visually-hidden label for the voice-gender selector next to the read-aloud button.",
+	"pagereader-voice-auto": "Option in the voice-gender selector: use the browser's default voice (ignores the site's configured gender preference, even if that is set to female or male).",
+	"pagereader-voice-female": "Option in the voice-gender selector: prefer a voice labeled female.",
+	"pagereader-voice-male": "Option in the voice-gender selector: prefer a voice labeled male.",
+	"pagereader-pause-label": "Label on the pause button while speech is in progress and not yet paused.",
+	"pagereader-pause-label-resume": "Label on the pause button while speech is currently paused, to resume it."
 }

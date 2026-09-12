@@ -70,7 +70,8 @@ breaking the site.
 
 **Overridable keys**: `namespaces`, `titlePrefixes`, `pages`,
 `excludedNamespaces`, `excludedPages`, `loadEverywhere`, `contentClass`,
-`contentSelector`, `skipSelectors`, `buttonPlacement`.
+`contentSelector`, `skipSelectors`, `buttonPlacement`, `voicePitch`,
+`voiceRate`, `voiceGender`.
 
 **LocalSettings-only, cannot be overridden here**: `PageReaderEnabled`,
 `PageReaderActions`, `PageReaderContentModels`, `PageReaderIncludeTalk`,
@@ -94,6 +95,12 @@ button on that one page.
 | Add `__NOPAGEREADER__` to a Kids page | Button no longer appears |
 | Edit `MediaWiki:PageReader-config` to add a namespace | Takes effect without a restart |
 | Save invalid JSON to `MediaWiki:PageReader-config` | Falls back to LocalSettings defaults, no error |
+| Voice select (auto/female/male) next to the button | Present, labeled, persists choice across reloads via `localStorage` |
+| Pick "female" or "male" then click the button (on a browser/OS with a matching named voice) | Speech uses a voice whose name contains that word; silently falls back to the default voice if none match |
+| Click the button to start speech | A pause button appears next to the voice select |
+| Click pause, then again to resume | Speech pauses via `speechSynthesis.pause()`, then resumes via `resume()`; label toggles Pause ⇄ Resume |
+| Click "Stop reading" while paused | Fully stops, pause button hides and resets |
+| Browser without `speechSynthesis.pause`/`resume` support | No pause button is created (rest of the feature still works) |
 
 ## Accessibility checklist
 
@@ -102,7 +109,7 @@ Per [USWDS's component accessibility guidance](https://designsystem.digital.gov/
 | Check | Expected | Status |
 |-------|----------|--------|
 | Tab to the button | Visible focus outline appears | Automated (`npm run test:a11y` — WCAG AA contrast check on the focus outline) |
-| axe-core structural/ARIA scan, idle + speaking states | No violations | Automated (`npm run test:a11y`) |
+| axe-core structural/ARIA scan, idle + speaking + paused states | No violations | Automated (`npm run test:a11y`) |
 | WCAG 2 AA color contrast, all button states (idle/hover/speaking/focus) | All ≥ threshold | Automated (`npm run test:a11y`) — see README's Testing section for why this runs as an exact calculation rather than through axe-core directly |
 | Activate with keyboard (Space or Enter) | Same as a mouse click — starts/stops speech | Manual — native `<button>` semantics, not separately verified in a real browser this pass |
 | Manual pass with VoiceOver (macOS/iOS) or JAWS (Windows) | Button's label and pressed/toggled state are announced correctly | **Still manual** — needs a real screen reader, not automatable from here |

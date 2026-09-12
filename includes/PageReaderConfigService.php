@@ -30,7 +30,10 @@ class PageReaderConfigService {
 	 *   contentClass:string,
 	 *   contentSelector:string,
 	 *   skipSelectors:array<int,string>,
-	 *   buttonPlacement:string
+	 *   buttonPlacement:string,
+	 *   voicePitch:float,
+	 *   voiceRate:float,
+	 *   voiceGender:string
 	 * }
 	 */
 	public function getEffectiveConfig( Config $mainConfig ): array {
@@ -45,6 +48,9 @@ class PageReaderConfigService {
 			'contentSelector' => $mainConfig->get( 'PageReaderContentSelector' ),
 			'skipSelectors' => $mainConfig->get( 'PageReaderSkipSelectors' ),
 			'buttonPlacement' => $mainConfig->get( 'PageReaderButtonPlacement' ),
+			'voicePitch' => $mainConfig->get( 'PageReaderVoicePitch' ),
+			'voiceRate' => $mainConfig->get( 'PageReaderVoiceRate' ),
+			'voiceGender' => $mainConfig->get( 'PageReaderVoiceGender' ),
 		];
 
 		$overlay = $this->getResolvedOverlay( $mainConfig );
@@ -179,6 +185,30 @@ class PageReaderConfigService {
 		foreach ( [ 'contentClass', 'contentSelector', 'buttonPlacement' ] as $key ) {
 			if ( isset( $raw[$key] ) && is_string( $raw[$key] ) && trim( $raw[$key] ) !== '' ) {
 				$overlay[$key] = trim( $raw[$key] );
+			}
+		}
+
+		// Unlike contentClass/buttonPlacement above, this one IS validated
+		// against its enum: the client only recognizes exact lowercase
+		// auto/female/male (see isValidGender() in ext.pageReader.js) and
+		// silently falls back to 'auto' on anything else, so a sysop typo
+		// like "Female" would otherwise look like it saved successfully
+		// while quietly doing nothing.
+		if ( isset( $raw['voiceGender'] ) && is_string( $raw['voiceGender'] ) ) {
+			$gender = strtolower( trim( $raw['voiceGender'] ) );
+			if ( in_array( $gender, [ 'auto', 'female', 'male' ], true ) ) {
+				$overlay['voiceGender'] = $gender;
+			}
+		}
+
+		// Web Speech API ranges: pitch 0-2, rate 0.1-10 (1 is the default for
+		// both). is_numeric() also accepts numeric strings, same leniency as
+		// isNamespaceLike() above; anything else (e.g. a stray "fast") is
+		// dropped rather than coerced, so it falls back to the LocalSettings
+		// default instead of silently becoming 0.
+		foreach ( [ 'voicePitch' => [ 0.0, 2.0 ], 'voiceRate' => [ 0.1, 10.0 ] ] as $key => $range ) {
+			if ( isset( $raw[$key] ) && is_numeric( $raw[$key] ) ) {
+				$overlay[$key] = max( $range[0], min( $range[1], (float)$raw[$key] ) );
 			}
 		}
 
