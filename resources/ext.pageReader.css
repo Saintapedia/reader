@@ -134,7 +134,33 @@
 
 .pagereader-highlight {
 	background: #F5D98A;
+	/* Explicit, not left to inherit: a skin whose own mark rule sets
+	   color to inherit, instead of relying on the (unguaranteed) default
+	   UA styling of black mark text, would otherwise risk a low- or
+	   no-contrast highlight on a dark theme. */
+	color: #1A1A1A;
 	border-radius: 3px;
 	box-decoration-break: clone;
 	-webkit-box-decoration-break: clone;
+}
+
+@media print {
+	/* A printed page can't be "currently speaking" -- printing while a
+	   read-along is in progress would otherwise leave a yellow sentence
+	   baked into the printout. */
+	.pagereader-highlight {
+		background: none;
+		color: inherit;
+	}
+}
+
+@media ( forced-colors: active ) {
+	/* Windows High Contrast (and similar) discards author background
+	   colors entirely, and there's no color/outline fallback above -- an
+	   explicit outline using the system Highlight color keeps the current
+	   sentence visible when the background can't be. */
+	.pagereader-highlight {
+		background: none;
+		outline: 2px solid Highlight;
+	}
 }

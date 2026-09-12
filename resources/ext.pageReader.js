@@ -73,7 +73,7 @@
 	}
 
 	// Walks contentRoot's live text nodes in document order (not a clone) --
-	// that's what makes highlighting possible later, since findTextNodeAt()
+	// that's what makes highlighting possible later, since highlightChunk()
 	// needs the same live nodes a sentence's offsets point back into.
 	function buildSpeechModel( contentRoot ) {
 		var skipPredicate = makeSkipPredicate( contentRoot );
@@ -93,7 +93,7 @@
 	// highlighted chunks, not a functional break, and this works in every
 	// browser with no feature detection. Returns {text, start, end} ranges
 	// (character offsets into the original text) so each sentence can still
-	// be mapped back to real DOM text nodes via findTextNodeAt().
+	// be mapped back to real DOM text nodes via highlightChunk().
 	function splitIntoSentences( text ) {
 		function skipWhitespace( from ) {
 			while ( from < text.length && /\s/.test( text.charAt( from ) ) ) {
@@ -119,66 +119,87 @@
 		return sentences;
 	}
 
-	// Removes a previous highlight (if any) and merges its text back into
-	// the surrounding node via normalize() -- always fully restoring the
-	// DOM before the next highlightChunk() call, rather than keeping a
+	// Removes a previous highlight (if any) and merges each mark's text back
+	// into its surrounding node via normalize() -- always fully restoring
+	// the DOM before the next highlightChunk() call, rather than keeping a
 	// reference to a node that surroundContents() may have split, which
 	// would otherwise go stale after exactly one highlight/clear cycle.
-	function clearHighlight( mark ) {
-		if ( !mark || !mark.parentNode ) {
+	// Accepts the array highlightChunk() returns (or null).
+	function clearHighlight( marks ) {
+		if ( !marks ) {
 			return null;
 		}
-		var text = document.createTextNode( mark.textContent );
-		mark.parentNode.replaceChild( text, mark );
-		if ( text.parentNode ) {
-			text.parentNode.normalize();
-		}
-		return null;
-	}
-
-	function findTextNodeAt( contentRoot, skipPredicate, targetOffset ) {
-		var walker = document.createTreeWalker( contentRoot, NodeFilter.SHOW_TEXT, null );
-		var offset = 0;
-		var node;
-		while ( ( node = walker.nextNode() ) ) {
-			if ( skipPredicate( node ) ) {
+		for ( var i = 0; i < marks.length; i++ ) {
+			var mark = marks[ i ];
+			if ( !mark || !mark.parentNode ) {
 				continue;
 			}
-			var len = node.nodeValue.length;
-			if ( targetOffset < offset + len ) {
-				return { node: node, localOffset: targetOffset - offset };
+			var text = document.createTextNode( mark.textContent );
+			mark.parentNode.replaceChild( text, mark );
+			if ( text.parentNode ) {
+				text.parentNode.normalize();
 			}
-			offset += len;
 		}
 		return null;
 	}
 
 	// Rebuilt from scratch against the live DOM on every call (see
-	// clearHighlight()) rather than reusing node references across calls --
-	// a sentence occasionally spanning multiple text nodes (e.g. markup
-	// like "the end<b>.</b>") is simplified to highlighting only the
-	// portion within the first matching node, a reasonable degrade for a
-	// rare case.
+	// clearHighlight()) rather than reusing node references across calls.
+	// Walks every non-skipped text node overlapping [startOffset, endOffset)
+	// and wraps each overlapping slice in its own <mark> -- a sentence
+	// spanning multiple text nodes (e.g. a wikilink or <b> in the middle,
+	// which is common in real wiki markup, not a rare edge case) needs one
+	// mark per node so the whole sentence is actually highlighted, not just
+	// the portion inside whichever node happens to contain startOffset.
 	function highlightChunk( contentRoot, skipPredicate, startOffset, length ) {
-		var located = findTextNodeAt( contentRoot, skipPredicate, startOffset );
-		if ( !located ) {
-			return null;
-		}
-		var node = located.node;
-		var localStart = located.localOffset;
-		var localEnd = Math.min( node.nodeValue.length, localStart + Math.max( 1, length ) );
-		if ( localEnd <= localStart ) {
-			return null;
+		var endOffset = startOffset + length;
+
+		// Two passes, deliberately not interleaved: collect every
+		// overlapping (node, localStart, localEnd) first with a read-only
+		// walk, then mutate the DOM in a second loop. Wrapping a node in a
+		// <mark> while the TreeWalker that found it is still mid-traversal
+		// does not reliably continue to the correct next node afterwards.
+		var walker = document.createTreeWalker( contentRoot, NodeFilter.SHOW_TEXT, null );
+		var offset = 0;
+		var node;
+		var targets = [];
+
+		while ( ( node = walker.nextNode() ) ) {
+			if ( skipPredicate( node ) ) {
+				continue;
+			}
+			var nodeStart = offset;
+			var nodeEnd = offset + node.nodeValue.length;
+			offset = nodeEnd;
+
+			if ( nodeEnd <= startOffset ) {
+				continue;
+			}
+			if ( nodeStart >= endOffset ) {
+				break;
+			}
+
+			var localStart = Math.max( 0, startOffset - nodeStart );
+			var localEnd = Math.min( node.nodeValue.length, endOffset - nodeStart );
+			if ( localEnd > localStart ) {
+				targets.push( { node: node, localStart: localStart, localEnd: localEnd } );
+			}
 		}
 
-		var range = document.createRange();
-		range.setStart( node, localStart );
-		range.setEnd( node, localEnd );
+		var marks = [];
+		for ( var i = 0; i < targets.length; i++ ) {
+			var target = targets[ i ];
+			var range = document.createRange();
+			range.setStart( target.node, target.localStart );
+			range.setEnd( target.node, target.localEnd );
 
-		var mark = document.createElement( 'mark' );
-		mark.className = 'pagereader-highlight';
-		range.surroundContents( mark );
-		return mark;
+			var mark = document.createElement( 'mark' );
+			mark.className = 'pagereader-highlight';
+			range.surroundContents( mark );
+			marks.push( mark );
+		}
+
+		return marks.length ? marks : null;
 	}
 
 	function clampNumber( value, min, max, fallback ) {
@@ -379,6 +400,16 @@
 		var speaking = false;
 		var paused = false;
 		var currentHighlight = null;
+		// Chrome (among others) only weakly references the JS-side
+		// SpeechSynthesisUtterance wrapper for whatever it's currently
+		// speaking -- without a strong reference held somewhere, that
+		// wrapper can be garbage collected mid-utterance (especially for a
+		// remote/network voice, which takes longer), silently dropping
+		// onend and stalling this hand-rolled queue after one sentence.
+		// This is the same class of bug that likely broke the original
+		// word-level highlighting attempt. Assigned right after each
+		// `new SpeechSynthesisUtterance(...)`, cleared in stopSpeaking().
+		var currentUtterance = null;
 		// Bumped on every stop/restart; every utterance callback below
 		// captures the generation it was created under and checks it's
 		// still current before doing anything. Guards against a stray
@@ -392,6 +423,7 @@
 			speechGeneration++;
 			speaking = false;
 			paused = false;
+			currentUtterance = null;
 			currentHighlight = clearHighlight( currentHighlight );
 			button.textContent = labelIdle;
 			button.classList.remove( 'pagereader-speaking' );
@@ -445,6 +477,7 @@
 				function speakWholeArticle() {
 					var utterance = new window.SpeechSynthesisUtterance( model.text );
 					applyVoiceSettings( utterance );
+					currentUtterance = utterance;
 					utterance.onend = function () {
 						if ( myGeneration === speechGeneration ) {
 							stopSpeaking();
@@ -475,6 +508,7 @@
 					var sentence = sentences[ index ];
 					var utterance = new window.SpeechSynthesisUtterance( sentence.text );
 					applyVoiceSettings( utterance );
+					currentUtterance = utterance;
 					utterance.onstart = function () {
 						if ( myGeneration !== speechGeneration ) {
 							return;

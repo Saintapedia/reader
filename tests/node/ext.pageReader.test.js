@@ -655,6 +655,64 @@ test( 'onstart highlights the sentence currently playing, replacing the previous
 	assert.strictEqual( marks[ 0 ].textContent, 'Saint today lived well.' );
 } );
 
+test( 'a sentence spanning a wikilink is highlighted across all its text nodes, not just the first', function () {
+	// Real wiki markup splits a sentence's text across multiple text nodes
+	// constantly (links, bold, italic). A highlighter that only wraps the
+	// first node leaves most of the spoken sentence unhighlighted.
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">' +
+			'He was born in <a href="/wiki/Assisi">Assisi</a> in 1181. He loved animals.' +
+			'</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.strictEqual( speechState.utterances[ 0 ].text, 'He was born in Assisi in 1181.' );
+
+	speechState.utterances[ 0 ].onstart();
+
+	const marks = window.document.querySelectorAll( '.pagereader-highlight' );
+	assert.ok( marks.length >= 2, 'the sentence spans a link, so more than one node should be wrapped' );
+	const highlightedText = Array.prototype.map.call( marks, function ( m ) { return m.textContent; } ).join( '' );
+	assert.strictEqual( highlightedText, 'He was born in Assisi in 1181.' );
+	assert.ok(
+		Array.prototype.some.call( marks, function ( m ) { return m.textContent === 'Assisi'; } ),
+		'the link text itself should be one of the wrapped pieces'
+	);
+} );
+
+test( 'a sentence spanning bold text is highlighted across all its text nodes, and clears fully on the next sentence', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">' +
+			'Saint <b>Francis</b> was a friar. He founded an order.' +
+			'</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	speechState.utterances[ 0 ].onstart();
+
+	let marks = window.document.querySelectorAll( '.pagereader-highlight' );
+	assert.ok( marks.length >= 2 );
+	assert.strictEqual(
+		Array.prototype.map.call( marks, function ( m ) { return m.textContent; } ).join( '' ),
+		'Saint Francis was a friar.'
+	);
+
+	speechState.utterances[ 0 ].onend();
+	speechState.utterances[ 1 ].onstart();
+
+	marks = window.document.querySelectorAll( '.pagereader-highlight' );
+	assert.strictEqual(
+		Array.prototype.map.call( marks, function ( m ) { return m.textContent; } ).join( '' ),
+		'He founded an order.',
+		'the multi-node highlight from the first sentence must be fully cleared, not left behind'
+	);
+	assert.strictEqual(
+		window.document.querySelector( '.kids-readaloud' ).textContent,
+		'Saint Francis was a friar. He founded an order.',
+		'DOM text content must be unchanged after wrap/unwrap'
+	);
+} );
+
 test( 'clicking Stop mid-sentence prevents the in-flight utterance from advancing the queue', function () {
 	// Regression for the generation-guard: cancel() can still cause the
 	// utterance that was speaking to fire onend/onerror asynchronously --
