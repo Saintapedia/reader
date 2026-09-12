@@ -12,38 +12,162 @@
 		return Array.isArray( configured ) ? configured : [];
 	}
 
-	function removeAll( clone, selector ) {
-		var matches = clone.querySelectorAll( selector );
-		for ( var i = 0; i < matches.length; i++ ) {
-			if ( matches[ i ].parentNode ) {
-				matches[ i ].parentNode.removeChild( matches[ i ] );
-			}
-		}
-	}
-
-	function buildSpeechText( contentRoot ) {
-		var clone = contentRoot.cloneNode( true );
-		// The button and its controls can end up inside contentRoot (the
-		// 'top-of-content' placement inserts them as content's first children)
-		// -- always strip them so their own labels/options are never read
-		// aloud, regardless of $wgPageReaderSkipSelectors.
-		removeAll( clone, '.pagereader-button' );
-		removeAll( clone, '.pagereader-voice-select' );
-		removeAll( clone, '.pagereader-visually-hidden' );
-		removeAll( clone, '.pagereader-pause-button' );
-		getSkipSelectors().forEach( function ( selector ) {
+	// Validated once per buildSpeechModel() call (not once per text node --
+	// see makeSkipPredicate()) so an invalid on-wiki-editable skip selector
+	// (a sysop typo) logs once and is dropped, rather than spamming a
+	// warning on every ancestor check.
+	function validSkipSelectors() {
+		var probe = document.createElement( 'div' );
+		return getSkipSelectors().filter( function ( selector ) {
 			try {
-				removeAll( clone, selector );
+				probe.matches( selector );
+				return true;
 			} catch ( e ) {
-				// One invalid entry in the on-wiki-editable skip-selector list
-				// (a sysop typo) must not abort speech entirely — skip just
-				// that selector and keep applying the rest.
 				if ( window.console && console.warn ) {
 					console.warn( 'PageReader: skipping invalid skip selector', selector, e );
 				}
+				return false;
 			}
 		} );
-		return clone.textContent;
+	}
+
+	// Shared by buildSpeechModel() (deciding what text to speak) and
+	// highlightChunk() (deciding what's eligible to highlight) so the two
+	// can never drift out of alignment -- they must skip exactly the same
+	// nodes in exactly the same order for onboundary's charIndex offsets
+	// (computed against the spoken text) to still point at the right word
+	// in the live DOM.
+	function makeSkipPredicate( contentRoot ) {
+		var skipSelectors = validSkipSelectors();
+		var ownControlClasses = [
+			'pagereader-button',
+			'pagereader-voice-select',
+			'pagereader-visually-hidden',
+			'pagereader-pause-button'
+		];
+		return function ( textNode ) {
+			var el = textNode.parentElement;
+			while ( el ) {
+				if ( el.classList ) {
+					for ( var c = 0; c < ownControlClasses.length; c++ ) {
+						if ( el.classList.contains( ownControlClasses[ c ] ) ) {
+							return true;
+						}
+					}
+				}
+				for ( var i = 0; i < skipSelectors.length; i++ ) {
+					try {
+						if ( el.matches( skipSelectors[ i ] ) ) {
+							return true;
+						}
+					} catch ( e ) {
+						// Already logged in validSkipSelectors(); ignore repeats.
+					}
+				}
+				if ( el === contentRoot ) {
+					break;
+				}
+				el = el.parentElement;
+			}
+			return false;
+		};
+	}
+
+	// Walks contentRoot's live text nodes in document order (not a clone) --
+	// that's what makes highlighting possible later, since findTextNodeAt()
+	// needs the same live nodes speech offsets point back into.
+	function buildSpeechModel( contentRoot ) {
+		var skipPredicate = makeSkipPredicate( contentRoot );
+		var walker = document.createTreeWalker( contentRoot, NodeFilter.SHOW_TEXT, null );
+		var text = '';
+		var node;
+		while ( ( node = walker.nextNode() ) ) {
+			if ( !skipPredicate( node ) ) {
+				text += node.nodeValue;
+			}
+		}
+		return { text: text, skipPredicate: skipPredicate };
+	}
+
+	// Removes a previous highlight (if any) and merges its text back into
+	// the surrounding node via normalize() -- always fully restoring the
+	// DOM before the next highlightChunk() call, rather than keeping a
+	// reference to a node that surroundContents() may have split, which
+	// would otherwise go stale after exactly one highlight/clear cycle.
+	function clearHighlight( mark ) {
+		if ( !mark || !mark.parentNode ) {
+			return null;
+		}
+		var text = document.createTextNode( mark.textContent );
+		mark.parentNode.replaceChild( text, mark );
+		if ( text.parentNode ) {
+			text.parentNode.normalize();
+		}
+		return null;
+	}
+
+	function findTextNodeAt( contentRoot, skipPredicate, targetOffset ) {
+		var walker = document.createTreeWalker( contentRoot, NodeFilter.SHOW_TEXT, null );
+		var offset = 0;
+		var node;
+		while ( ( node = walker.nextNode() ) ) {
+			if ( skipPredicate( node ) ) {
+				continue;
+			}
+			var len = node.nodeValue.length;
+			if ( targetOffset < offset + len ) {
+				return { node: node, localOffset: targetOffset - offset };
+			}
+			offset += len;
+		}
+		return null;
+	}
+
+	// onboundary's charLength isn't provided by every browser (notably
+	// Firefox, which also tends to report only sentence-level boundaries,
+	// not word-level) -- when missing, estimate a reasonable chunk: to the
+	// next whitespace for a word boundary, or to the next sentence-ending
+	// punctuation (inclusive) for a sentence boundary. Both capped to bound
+	// a worst-case scan on unusual input.
+	function estimateChunkLength( text, startIndex, boundaryName ) {
+		var isSentence = boundaryName === 'sentence';
+		var maxLen = isSentence ? 300 : 40;
+		var stopPattern = isSentence ? /[.!?]/ : /\s/;
+		var i = startIndex;
+		while ( i < text.length && i < startIndex + maxLen && !stopPattern.test( text.charAt( i ) ) ) {
+			i++;
+		}
+		if ( isSentence && i < text.length && stopPattern.test( text.charAt( i ) ) ) {
+			i++;
+		}
+		return Math.max( 1, i - startIndex );
+	}
+
+	// Highlights are always rebuilt from scratch against the live DOM (see
+	// clearHighlight()) rather than reusing node references across calls --
+	// a word occasionally spanning multiple text nodes (e.g. markup like
+	// "can<b>not</b>") is simplified to highlighting only the portion
+	// within the first matching node, a reasonable degrade for a rare case.
+	function highlightChunk( contentRoot, skipPredicate, startOffset, length ) {
+		var located = findTextNodeAt( contentRoot, skipPredicate, startOffset );
+		if ( !located ) {
+			return null;
+		}
+		var node = located.node;
+		var localStart = located.localOffset;
+		var localEnd = Math.min( node.nodeValue.length, localStart + Math.max( 1, length ) );
+		if ( localEnd <= localStart ) {
+			return null;
+		}
+
+		var range = document.createRange();
+		range.setStart( node, localStart );
+		range.setEnd( node, localEnd );
+
+		var mark = document.createElement( 'mark' );
+		mark.className = 'pagereader-highlight';
+		range.surroundContents( mark );
+		return mark;
 	}
 
 	function clampNumber( value, min, max, fallback ) {
@@ -210,10 +334,13 @@
 		var pauseButton = findPauseButton( button );
 		var speaking = false;
 		var paused = false;
+		var currentHighlight = null;
+		var speechModel = null;
 
 		function stopSpeaking() {
 			speaking = false;
 			paused = false;
+			currentHighlight = clearHighlight( currentHighlight );
 			button.textContent = labelIdle;
 			button.classList.remove( 'pagereader-speaking' );
 			button.setAttribute( 'aria-pressed', 'false' );
@@ -231,10 +358,12 @@
 					stopSpeaking();
 					return;
 				}
-				// buildSpeechText() runs $wgPageReaderSkipSelectors (editable via the
-				// on-wiki config overlay) through querySelectorAll(); an invalid
-				// selector throws synchronously here, so this must stay guarded.
-				var utterance = new window.SpeechSynthesisUtterance( buildSpeechText( contentRoot ) );
+				// buildSpeechModel() runs $wgPageReaderSkipSelectors (editable via
+				// the on-wiki config overlay) through Element.matches(); an invalid
+				// selector is validated out up front, but this stays guarded
+				// regardless since it also builds the DOM walk highlighting reads.
+				speechModel = buildSpeechModel( contentRoot );
+				var utterance = new window.SpeechSynthesisUtterance( speechModel.text );
 				utterance.pitch = clampNumber( mw.config.get( 'wgPageReaderVoicePitch' ), 0, 2, 1 );
 				utterance.rate = clampNumber( mw.config.get( 'wgPageReaderVoiceRate' ), 0.1, 10, 1 );
 				var voiceSelect = findVoiceSelect( button );
@@ -245,6 +374,24 @@
 				}
 				utterance.onend = stopSpeaking;
 				utterance.onerror = stopSpeaking;
+				// Read-along highlighting -- best-effort only. Browser support for
+				// onboundary (and for charLength/event.name within it) varies a lot;
+				// a failure here must never interrupt speech itself.
+				utterance.onboundary = function ( event ) {
+					try {
+						currentHighlight = clearHighlight( currentHighlight );
+						var length = event.charLength ||
+							estimateChunkLength( speechModel.text, event.charIndex, event.name );
+						currentHighlight = highlightChunk(
+							contentRoot, speechModel.skipPredicate, event.charIndex, length
+						);
+					} catch ( e ) {
+						if ( window.console && console.warn ) {
+							console.warn( 'PageReader highlight failed', e );
+						}
+						currentHighlight = null;
+					}
+				};
 				window.speechSynthesis.cancel();
 				window.speechSynthesis.speak( utterance );
 				speaking = true;

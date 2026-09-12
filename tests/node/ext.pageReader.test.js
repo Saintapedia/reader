@@ -548,6 +548,143 @@ test( 're-firing wikipage.content does not duplicate the pause button', function
 	assert.strictEqual( window.document.querySelectorAll( '.pagereader-pause-button' ).length, 1 );
 } );
 
+test( 'onboundary highlights the target word in the live DOM', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello brave saint today.</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	const utterance = speechState.utterances[ 0 ];
+
+	utterance.onboundary( { charIndex: 6, charLength: 5, name: 'word' } );
+
+	const mark = window.document.querySelector( '.pagereader-highlight' );
+	assert.ok( mark, 'a highlight mark should exist' );
+	assert.strictEqual( mark.textContent, 'brave' );
+	assert.strictEqual(
+		window.document.querySelector( '.kids-readaloud' ).textContent,
+		'Hello brave saint today.',
+		'wrapping must not change the overall visible text'
+	);
+} );
+
+test( 'a second onboundary event clears the previous highlight, leaving exactly one mark', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello brave saint today.</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	const utterance = speechState.utterances[ 0 ];
+
+	utterance.onboundary( { charIndex: 0, charLength: 5, name: 'word' } );
+	utterance.onboundary( { charIndex: 6, charLength: 5, name: 'word' } );
+
+	const marks = window.document.querySelectorAll( '.pagereader-highlight' );
+	assert.strictEqual( marks.length, 1 );
+	assert.strictEqual( marks[ 0 ].textContent, 'brave' );
+} );
+
+test( 'onboundary without charLength estimates a word by scanning to the next whitespace', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello brave saint today.</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	const utterance = speechState.utterances[ 0 ];
+
+	utterance.onboundary( { charIndex: 12, name: 'word' } );
+
+	const mark = window.document.querySelector( '.pagereader-highlight' );
+	assert.strictEqual( mark.textContent, 'saint' );
+} );
+
+test( 'a sentence-only onboundary event (no charLength) highlights to the next sentence-ending punctuation', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	const utterance = speechState.utterances[ 0 ];
+
+	utterance.onboundary( { charIndex: 13, name: 'sentence' } );
+
+	const mark = window.document.querySelector( '.pagereader-highlight' );
+	assert.strictEqual( mark.textContent, 'Saint today lived well.' );
+} );
+
+test( 'highlight persists through pause and is cleared by stop', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello brave saint today.</div></div>'
+	);
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	const utterance = speechState.utterances[ 0 ];
+	utterance.onboundary( { charIndex: 0, charLength: 5, name: 'word' } );
+
+	window.document.querySelector( '.pagereader-pause-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.ok(
+		window.document.querySelector( '.pagereader-highlight' ),
+		'highlight should remain visible while paused'
+	);
+
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 0 );
+	assert.strictEqual(
+		window.document.querySelector( '.kids-readaloud' ).textContent,
+		'Hello brave saint today.'
+	);
+} );
+
+test( 'natural utterance end (onend) also clears the highlight', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello brave saint today.</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	const utterance = speechState.utterances[ 0 ];
+	utterance.onboundary( { charIndex: 0, charLength: 5, name: 'word' } );
+	assert.ok( window.document.querySelector( '.pagereader-highlight' ) );
+
+	utterance.onend();
+
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 0 );
+} );
+
+test( 'skipped (infobox) text is excluded from spoken offsets, so highlighting still lands on the right real word', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">' +
+			'<span class="infobox">SKIP ME</span>Hello brave saint.</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	const utterance = speechState.utterances[ 0 ];
+	assert.strictEqual( utterance.text, 'Hello brave saint.' );
+
+	utterance.onboundary( { charIndex: 6, charLength: 5, name: 'word' } );
+
+	const mark = window.document.querySelector( '.pagereader-highlight' );
+	assert.ok( mark, 'a highlight mark should exist' );
+	assert.strictEqual( mark.textContent, 'brave' );
+	assert.ok( !mark.closest( '.infobox' ), 'highlight must never land inside skipped content' );
+} );
+
+test( 'a failure inside onboundary never breaks speech (button state stays consistent)', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello brave saint today.</div></div>'
+	);
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	const utterance = speechState.utterances[ 0 ];
+
+	// An offset far past the end of the text -- findTextNodeAt() returns
+	// null, highlightChunk() returns null, no throw.
+	utterance.onboundary( { charIndex: 99999, charLength: 5, name: 'word' } );
+
+	assert.strictEqual( button.textContent, 'Stop reading', 'speech must still be considered active' );
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 0 );
+} );
+
 console.log( '\n' + passed + ' passed, ' + failed + ' failed' );
 if ( failed > 0 ) {
 	console.log( '\nFailures:\n' + failures.join( '\n' ) );
