@@ -182,9 +182,22 @@ class PageReaderConfigService {
 			$overlay['loadEverywhere'] = $raw['loadEverywhere'];
 		}
 
-		foreach ( [ 'contentClass', 'contentSelector', 'buttonPlacement', 'voiceGender' ] as $key ) {
+		foreach ( [ 'contentClass', 'contentSelector', 'buttonPlacement' ] as $key ) {
 			if ( isset( $raw[$key] ) && is_string( $raw[$key] ) && trim( $raw[$key] ) !== '' ) {
 				$overlay[$key] = trim( $raw[$key] );
+			}
+		}
+
+		// Unlike contentClass/buttonPlacement above, this one IS validated
+		// against its enum: the client only recognizes exact lowercase
+		// auto/female/male (see isValidGender() in ext.pageReader.js) and
+		// silently falls back to 'auto' on anything else, so a sysop typo
+		// like "Female" would otherwise look like it saved successfully
+		// while quietly doing nothing.
+		if ( isset( $raw['voiceGender'] ) && is_string( $raw['voiceGender'] ) ) {
+			$gender = strtolower( trim( $raw['voiceGender'] ) );
+			if ( in_array( $gender, [ 'auto', 'female', 'male' ], true ) ) {
+				$overlay['voiceGender'] = $gender;
 			}
 		}
 

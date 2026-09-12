@@ -98,15 +98,27 @@
 	min-width: 44px;
 	border: 2px solid #152C4A;
 	border-radius: 999px;
-	background: transparent;
+	/* Not transparent: a transparent background makes text contrast
+	   dependent on whatever page/skin background happens to show through,
+	   which this stylesheet can't guarantee meets WCAG AA on every theme. */
+	background: #FDF8EC;
 	color: #152C4A;
 	font-size: 0.95em;
 	font-weight: 700;
 	cursor: pointer;
 }
 
+/* [hidden] alone is not reliably enough: browsers vary on whether their
+   UA stylesheet's [hidden] rule out-specificities or out-weighs an
+   author class rule that also sets display (Chromium's UA rule uses
+   !important; others may not) -- so this class must win the tie itself,
+   regardless of which browser's default behavior applies. */
+.pagereader-pause-button[hidden] {
+	display: none;
+}
+
 .pagereader-pause-button:hover {
-	background: rgba( 21, 44, 74, 0.08 );
+	background: #F5EFE0;
 }
 
 .pagereader-pause-button:focus-visible {

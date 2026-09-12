@@ -118,6 +118,21 @@ const focusOutline = findHex( focusBody, 'outline' );
 const speakingBackground = findHex( speakingBody, 'background' );
 const speakingText = findHex( speakingBody, 'color' );
 
+const selectBody = extractRuleBody( CSS_SRC, '\\.pagereader-voice-select' );
+const selectFocusBody = extractRuleBody( CSS_SRC, '\\.pagereader-voice-select:focus-visible' );
+const selectBackground = findHex( selectBody, 'background' );
+const selectText = findHex( selectBody, 'color' );
+const selectFocusOutline = findHex( selectFocusBody, 'outline' );
+
+const pauseBody = extractRuleBody( CSS_SRC, '\\.pagereader-pause-button' );
+const pauseHiddenBody = extractRuleBody( CSS_SRC, '\\.pagereader-pause-button\\[hidden\\]' );
+const pauseHoverBody = extractRuleBody( CSS_SRC, '\\.pagereader-pause-button:hover' );
+const pauseFocusBody = extractRuleBody( CSS_SRC, '\\.pagereader-pause-button:focus-visible' );
+const pauseBackground = findHex( pauseBody, 'background' );
+const pauseText = findHex( pauseBody, 'color' );
+const pauseHoverBackground = findHex( pauseHoverBody, 'background' );
+const pauseFocusOutline = findHex( pauseFocusBody, 'outline' );
+
 test( 'CSS color extraction found all expected declarations', function () {
 	assert.ok( idleBackground, 'idle background not found in .pagereader-button' );
 	assert.ok( idleText, 'idle text color not found in .pagereader-button' );
@@ -125,6 +140,61 @@ test( 'CSS color extraction found all expected declarations', function () {
 	assert.ok( focusOutline, 'focus outline color not found in .pagereader-button:focus-visible' );
 	assert.ok( speakingBackground, 'speaking background not found in .pagereader-button.pagereader-speaking' );
 	assert.ok( speakingText, 'speaking text color not found in .pagereader-button.pagereader-speaking' );
+	assert.ok( selectBackground, 'background not found in .pagereader-voice-select' );
+	assert.ok( selectText, 'text color not found in .pagereader-voice-select' );
+	assert.ok( selectFocusOutline, 'focus outline color not found in .pagereader-voice-select:focus-visible' );
+	assert.ok( pauseBackground, 'background not found in .pagereader-pause-button' );
+	assert.ok( pauseText, 'text color not found in .pagereader-pause-button' );
+	assert.ok( pauseHoverBackground, 'hover background not found in .pagereader-pause-button:hover' );
+	assert.ok( pauseFocusOutline, 'focus outline color not found in .pagereader-pause-button:focus-visible' );
+} );
+
+// This rule exists specifically so [hidden] wins regardless of whether a
+// given browser's own UA stylesheet forces display:none on [hidden] with
+// !important (Chromium does; historically not every engine has) --
+// jsdom's own [hidden] handling mirrors Chromium, so it can't reproduce
+// the bug this guards against, making this structural check on the
+// stylesheet itself the only regression coverage available here.
+test( 'pause button has its own [hidden] rule overriding its base display, not relying on the browser\'s UA stylesheet', function () {
+	assert.ok( pauseHiddenBody, '.pagereader-pause-button[hidden] rule not found' );
+	assert.ok(
+		/display\s*:\s*none/.test( pauseHiddenBody ),
+		'expected "display: none" inside .pagereader-pause-button[hidden]'
+	);
+} );
+
+test( 'voice select text meets WCAG AA text contrast (>= 4.5:1)', function () {
+	const ratio = contrastRatio( selectText, selectBackground );
+	assert.ok( ratio >= 4.5, `ratio was ${ratio.toFixed( 2 )}:1 (text ${selectText} on background ${selectBackground})` );
+} );
+
+test( 'voice select focus outline meets WCAG AA non-text UI contrast (>= 3:1)', function () {
+	const ratio = contrastRatio( selectFocusOutline, selectBackground );
+	assert.ok(
+		ratio >= 3.0,
+		`ratio was ${ratio.toFixed( 2 )}:1 (outline ${selectFocusOutline} on background ${selectBackground})`
+	);
+} );
+
+test( 'pause button text meets WCAG AA text contrast (>= 4.5:1), idle and hover', function () {
+	const idleRatio = contrastRatio( pauseText, pauseBackground );
+	assert.ok(
+		idleRatio >= 4.5,
+		`idle ratio was ${idleRatio.toFixed( 2 )}:1 (text ${pauseText} on background ${pauseBackground})`
+	);
+	const hoverRatio = contrastRatio( pauseText, pauseHoverBackground );
+	assert.ok(
+		hoverRatio >= 4.5,
+		`hover ratio was ${hoverRatio.toFixed( 2 )}:1 (text ${pauseText} on background ${pauseHoverBackground})`
+	);
+} );
+
+test( 'pause button focus outline meets WCAG AA non-text UI contrast (>= 3:1)', function () {
+	const ratio = contrastRatio( pauseFocusOutline, pauseBackground );
+	assert.ok(
+		ratio >= 3.0,
+		`ratio was ${ratio.toFixed( 2 )}:1 (outline ${pauseFocusOutline} on background ${pauseBackground})`
+	);
 } );
 
 // WCAG 2 AA: 4.5:1 for text, 3:1 for non-text UI components (1.4.11).

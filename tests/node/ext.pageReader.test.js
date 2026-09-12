@@ -64,6 +64,7 @@ function makeMw( configOverrides, msgOverrides ) {
 }
 
 function makeSpeechSynthesis( voices, supportsPause ) {
+	let currentVoices = voices || [];
 	const state = { spoken: [], cancelCount: 0, utterances: [], pauseCount: 0, resumeCount: 0 };
 	const speechSynthesis = {
 		cancel: function () { state.cancelCount++; },
@@ -71,7 +72,23 @@ function makeSpeechSynthesis( voices, supportsPause ) {
 			state.spoken.push( utterance.text );
 			state.utterances.push( utterance );
 		},
-		getVoices: function () { return voices || []; },
+		getVoices: function () { return currentVoices; },
+		// Real browsers always have this property (whether or not the
+		// implementation ever actually fires it); present here so the
+		// module's `'onvoiceschanged' in window.speechSynthesis` feature
+		// check behaves like a real browser rather than an unusually
+		// minimal mock.
+		onvoiceschanged: null,
+		// Test-only helper (not part of the real Web Speech API) simulating
+		// Chrome's asynchronous voice list population: swaps the list
+		// getVoices() returns, then fires the module's own listener exactly
+		// as a real 'voiceschanged' event would.
+		simulateVoicesArriving: function ( newVoices ) {
+			currentVoices = newVoices;
+			if ( typeof speechSynthesis.onvoiceschanged === 'function' ) {
+				speechSynthesis.onvoiceschanged();
+			}
+		},
 	};
 	if ( supportsPause !== false ) {
 		speechSynthesis.pause = function () { state.pauseCount++; };
@@ -116,6 +133,7 @@ function buildDom( bodyHtml, configOverrides, msgOverrides, voices, seedLocalSto
 	return {
 		window: window,
 		speechState: speech.state,
+		speechSynthesis: speech.speechSynthesis,
 		consoleWarnings: consoleWarnings,
 		// Simulates a second AJAX-driven wikipage.content firing on the same DOM.
 		refire: function () { mwSetup.fireHook( 'wikipage.content' ); },
@@ -546,6 +564,43 @@ test( 're-firing wikipage.content does not duplicate the pause button', function
 	refire();
 	refire();
 	assert.strictEqual( window.document.querySelectorAll( '.pagereader-pause-button' ).length, 1 );
+} );
+
+test( 'a voice list that arrives late (via voiceschanged) is still picked up on the next click', function () {
+	// Simulates Chrome's real-world quirk: getVoices() is [] at page load,
+	// and the real list only shows up once 'voiceschanged' fires.
+	const { window, speechState, speechSynthesis } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderVoiceGender: 'female' },
+		null,
+		[]
+	);
+	speechSynthesis.simulateVoicesArriving( [
+		{ name: 'Google UK English Female' }, { name: 'Google UK English Male' },
+	] );
+
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Google UK English Female' );
+} );
+
+test( 'duplicate-button guard still finds the button with an extra unrelated sibling between it and content', function () {
+	// Regression for a hardcoded sibling-walk hop bound: an intruder
+	// element (e.g. from some other gadget) sitting between PageReader's
+	// own controls and the content marker must not defeat the guard.
+	const { window, refire } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>'
+	);
+	const content = window.document.querySelector( '.kids-readaloud' );
+	const intruder = window.document.createElement( 'div' );
+	intruder.textContent = 'unrelated widget';
+	content.parentNode.insertBefore( intruder, content );
+
+	refire();
+	refire();
+
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
 } );
 
 console.log( '\n' + passed + ' passed, ' + failed + ' failed' );

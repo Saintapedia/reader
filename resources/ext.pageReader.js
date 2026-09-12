@@ -60,14 +60,42 @@
 	// depends entirely on how the browser/OS happens to label its voices,
 	// and a device with no matching voice just falls back to the default
 	// voice (returns null), never an error.
+	var cachedVoices = [];
+
+	// Chrome (among other browsers) populates its voice list asynchronously
+	// -- the very first getVoices() call right after page load frequently
+	// returns []. Calling it eagerly here, and again on 'voiceschanged',
+	// means the cache is usually already warm by the time a reader actually
+	// clicks the button, without blocking or delaying anything.
+	function refreshCachedVoices() {
+		try {
+			if ( window.speechSynthesis && typeof window.speechSynthesis.getVoices === 'function' ) {
+				var voices = window.speechSynthesis.getVoices();
+				if ( voices && voices.length ) {
+					cachedVoices = voices;
+				}
+			}
+		} catch ( e ) {
+			// Ignored -- pickVoice() falls back to the browser default voice.
+		}
+	}
+
+	refreshCachedVoices();
+	try {
+		if ( window.speechSynthesis && 'onvoiceschanged' in window.speechSynthesis ) {
+			window.speechSynthesis.onvoiceschanged = refreshCachedVoices;
+		}
+	} catch ( e ) {
+		// Ignored -- rare/nonstandard implementation; pickVoice() still
+		// falls back correctly without this.
+	}
+
 	function pickVoice( gender ) {
 		if ( gender !== 'female' && gender !== 'male' ) {
 			return null;
 		}
-		if ( !window.speechSynthesis || typeof window.speechSynthesis.getVoices !== 'function' ) {
-			return null;
-		}
-		var voices = window.speechSynthesis.getVoices() || [];
+		refreshCachedVoices();
+		var voices = cachedVoices;
 		for ( var i = 0; i < voices.length; i++ ) {
 			var name = ( voices[ i ].name || '' ).toLowerCase();
 			if ( gender === 'female' && name.indexOf( 'female' ) !== -1 ) {
@@ -173,25 +201,27 @@
 		return fragment;
 	}
 
-	function findFollowingSibling( start, className, maxHops ) {
+	// Unbounded rather than capped at a fixed hop count: a fixed cap that
+	// happens to match today's exact sibling chain (select, label, pause
+	// button) would silently break the moment one more sibling -- ours or
+	// some other gadget's -- ends up between the button and its target.
+	function findFollowingSibling( start, className ) {
 		var candidate = start.nextElementSibling;
-		var hops = 0;
-		while ( candidate && hops < maxHops ) {
+		while ( candidate ) {
 			if ( candidate.classList && candidate.classList.contains( className ) ) {
 				return candidate;
 			}
 			candidate = candidate.nextElementSibling;
-			hops++;
 		}
 		return null;
 	}
 
 	function findVoiceSelect( button ) {
-		return findFollowingSibling( button, 'pagereader-voice-select', 3 );
+		return findFollowingSibling( button, 'pagereader-voice-select' );
 	}
 
 	function findPauseButton( button ) {
-		return findFollowingSibling( button, 'pagereader-pause-button', 3 );
+		return findFollowingSibling( button, 'pagereader-pause-button' );
 	}
 
 	function bindButton( button, contentRoot ) {
@@ -316,19 +346,19 @@
 
 	// content.previousElementSibling (used below for 'before-content' and the
 	// 'after-heading' no-heading fallback) is no longer the button itself --
-	// insertButton() also places the voice select+label between the button
-	// and content, so the button now sits a few hops further back. Walk back
-	// a bounded number of siblings rather than hardcoding an exact hop count,
-	// so this keeps working if the controls inserted after the button change.
-	function findPrecedingButton( node, maxHops ) {
+	// insertButton() also places the voice select/label/pause button between
+	// the button and content, so the button now sits a few siblings further
+	// back. Unbounded rather than capped at a fixed hop count: a cap that
+	// happens to match today's exact sibling chain would silently break the
+	// moment one more sibling -- ours or some other gadget's -- ends up
+	// between the button and content.
+	function findPrecedingButton( node ) {
 		var candidate = node.previousElementSibling;
-		var hops = 0;
-		while ( candidate && hops < maxHops ) {
+		while ( candidate ) {
 			if ( candidate.classList && candidate.classList.contains( 'pagereader-button' ) ) {
 				return candidate;
 			}
 			candidate = candidate.previousElementSibling;
-			hops++;
 		}
 		return null;
 	}
@@ -349,13 +379,13 @@
 				return ( afterHeading && afterHeading.classList &&
 					afterHeading.classList.contains( 'pagereader-button' ) ) ? afterHeading : null;
 			}
-			return findPrecedingButton( content, 4 );
+			return findPrecedingButton( content );
 		} else if ( placement === 'top-of-content' ) {
 			var firstChild = content.firstElementChild;
 			return ( firstChild && firstChild.classList &&
 				firstChild.classList.contains( 'pagereader-button' ) ) ? firstChild : null;
 		}
-		return findPrecedingButton( content, 4 );
+		return findPrecedingButton( content );
 	}
 
 	function insertButton( content, placement ) {
