@@ -101,9 +101,6 @@ button on that one page.
 | Click pause, then again to resume | Speech pauses via `speechSynthesis.pause()`, then resumes via `resume()`; label toggles Pause ⇄ Resume |
 | Click "Stop reading" while paused | Fully stops, pause button hides and resets |
 | Browser without `speechSynthesis.pause`/`resume` support | No pause button is created (rest of the feature still works) |
-| While speaking (Chrome/Edge) | Current word highlights live as it's spoken |
-| While speaking (Firefox) | Highlighting still appears, at sentence granularity (Firefox's `onboundary` support is sentence-only) |
-| Browser with no `onboundary` support at all | No highlight ever appears; speech is unaffected |
 
 ## Accessibility checklist
 
@@ -112,7 +109,7 @@ Per [USWDS's component accessibility guidance](https://designsystem.digital.gov/
 | Check | Expected | Status |
 |-------|----------|--------|
 | Tab to the button | Visible focus outline appears | Automated (`npm run test:a11y` — WCAG AA contrast check on the focus outline) |
-| axe-core structural/ARIA scan, idle + speaking + paused + highlighting states | No violations | Automated (`npm run test:a11y`) |
+| axe-core structural/ARIA scan, idle + speaking + paused states | No violations | Automated (`npm run test:a11y`) |
 | WCAG 2 AA color contrast, all button states (idle/hover/speaking/focus) | All ≥ threshold | Automated (`npm run test:a11y`) — see README's Testing section for why this runs as an exact calculation rather than through axe-core directly |
 | Activate with keyboard (Space or Enter) | Same as a mouse click — starts/stops speech | Manual — native `<button>` semantics, not separately verified in a real browser this pass |
 | Manual pass with VoiceOver (macOS/iOS) or JAWS (Windows) | Button's label and pressed/toggled state are announced correctly | **Still manual** — needs a real screen reader, not automatable from here |

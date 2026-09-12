@@ -198,13 +198,7 @@ function buildPage() {
 	const window = dom.window;
 	const mwSetup = makeMw();
 	window.mw = mwSetup.mwObj;
-	window.speechSynthesis = {
-		cancel: () => {},
-		speak: ( u ) => { window.__lastUtterance = u; },
-		pause: () => {},
-		resume: () => {},
-		getVoices: () => [],
-	};
+	window.speechSynthesis = { cancel: () => {}, speak: () => {}, pause: () => {}, resume: () => {}, getVoices: () => [] };
 	window.SpeechSynthesisUtterance = function ( text ) { this.text = text; };
 	window.eval( SCRIPT_SRC );
 	mwSetup.fireHook( 'wikipage.content' );
@@ -254,19 +248,6 @@ asyncTest( 'axe-core: no violations in idle state', async () => {
 			.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 		window.document.querySelector( '.pagereader-pause-button' )
 			.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
-		const results = await runAxe( window, '#mw-content-text' );
-		assert.strictEqual(
-			results.violations.length, 0,
-			results.violations.map( ( v ) => `${v.id}: ${v.description}` ).join( '; ' )
-		);
-	} );
-} ).then( () => {
-	return asyncTest( 'axe-core: no violations with a read-along highlight active', async () => {
-		const window = buildPage();
-		window.document.querySelector( '.pagereader-button' )
-			.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
-		window.__lastUtterance.onboundary( { charIndex: 0, charLength: 4, name: 'word' } );
-		assert.ok( window.document.querySelector( '.pagereader-highlight' ), 'highlight mark should be present' );
 		const results = await runAxe( window, '#mw-content-text' );
 		assert.strictEqual(
 			results.violations.length, 0,

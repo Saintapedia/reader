@@ -119,10 +119,3 @@
 		display: none !important;
 	}
 }
-
-.pagereader-highlight {
-	background: #F5D98A;
-	border-radius: 3px;
-	box-decoration-break: clone;
-	-webkit-box-decoration-break: clone;
-}

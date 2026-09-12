@@ -17,7 +17,3 @@
 - Add a pause/resume button, shown only while speech is in progress
   and feature-detected (omitted on a browser without
   `speechSynthesis.pause`/`resume` support).
-- Add read-along highlighting of the word currently being spoken
-  (best-effort, degrading to sentence-level on browsers that only
-  report sentence boundaries, and to no highlighting at all on
-  browsers with no `onboundary` support).

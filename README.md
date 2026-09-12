@@ -35,11 +35,6 @@ for the full history and rationale).
 - A pause/resume button appears next to the voice select once speech
   starts (feature-detected — omitted entirely on a browser without
   `speechSynthesis.pause`/`resume` support).
-- Read-along highlighting: the word currently being spoken is
-  highlighted live in the article (best-effort — depends on the
-  browser firing `SpeechSynthesisUtterance`'s `onboundary` event, and
-  degrades to sentence-level highlighting on browsers, like Firefox,
-  that only report sentence boundaries).
 
 ## Title-prefix matching rules
 
