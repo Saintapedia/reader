@@ -45,6 +45,7 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 			'PageReaderVoicePitch' => 1.2,
 			'PageReaderVoiceRate' => 0.9,
 			'PageReaderVoiceGender' => 'male',
+			'PageReaderHighlightEnabled' => true,
 			'PageReaderPreferredVoices' => [ 'female' => [ 'Samantha' ], 'male' => [ 'Daniel' ] ],
 			'PageReaderConfigPage' => '',
 		] );
@@ -92,6 +93,7 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 		$this->assertSame( 1.2, $jsVars['wgPageReaderVoicePitch'] );
 		$this->assertSame( 0.9, $jsVars['wgPageReaderVoiceRate'] );
 		$this->assertSame( 'male', $jsVars['wgPageReaderVoiceGender'] );
+		$this->assertTrue( $jsVars['wgPageReaderHighlightEnabled'] );
 		$this->assertSame(
 			[ 'female' => [ 'Samantha' ], 'male' => [ 'Daniel' ] ],
 			$jsVars['wgPageReaderPreferredVoices']
@@ -151,6 +153,17 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 		$this->assertSame( 1.4, $jsVars['wgPageReaderVoicePitch'] );
 		$this->assertSame( 0.8, $jsVars['wgPageReaderVoiceRate'] );
 		$this->assertSame( 'female', $jsVars['wgPageReaderVoiceGender'] );
+	}
+
+	public function testOnWikiOverlayHighlightEnabledReachesJsConfigVars(): void {
+		$this->overridePageReaderConfig( [ 'PageReaderConfigPage' => 'PageReader-config' ] );
+		$this->editPage( 'MediaWiki:PageReader-config', '{"highlightEnabled": false}' );
+		$this->editPage( 'Kids:Overlay highlight disabled test', 'Some content.' );
+
+		$out = $this->runBeforePageDisplay( 'Kids:Overlay highlight disabled test' );
+
+		$jsVars = $out->getJsConfigVars();
+		$this->assertFalse( $jsVars['wgPageReaderHighlightEnabled'] );
 	}
 
 	public function testOnWikiOverlayPreferredVoicesReachesJsConfigVars(): void {

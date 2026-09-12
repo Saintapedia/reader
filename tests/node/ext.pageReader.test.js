@@ -32,6 +32,7 @@ function makeMw( configOverrides, msgOverrides ) {
 		wgPageReaderVoicePitch: 1.15,
 		wgPageReaderVoiceRate: 1.05,
 		wgPageReaderVoiceGender: 'female',
+		wgPageReaderHighlightEnabled: true,
 		wgPageReaderPreferredVoices: { female: [], male: [] },
 	}, configOverrides || {} );
 	const messages = Object.assign( {
@@ -762,6 +763,188 @@ test( 'duplicate-button guard still finds the button with an extra unrelated sib
 	refire();
 
 	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
+} );
+
+test( 'multi-sentence content is spoken as a queue, one utterance per sentence', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances.length, 1, 'only the first sentence is spoken up front' );
+	assert.strictEqual( speechState.utterances[ 0 ].text, 'Hello there.' );
+
+	speechState.utterances[ 0 ].onend();
+
+	assert.strictEqual( speechState.utterances.length, 2, 'onend advances the queue to the next sentence' );
+	assert.strictEqual( speechState.utterances[ 1 ].text, 'Saint today lived well.' );
+} );
+
+test( 'onstart highlights the sentence currently playing, replacing the previous one', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	speechState.utterances[ 0 ].onstart();
+	let mark = window.document.querySelector( '.pagereader-highlight' );
+	assert.strictEqual( mark.textContent, 'Hello there.' );
+
+	speechState.utterances[ 0 ].onend();
+	speechState.utterances[ 1 ].onstart();
+	const marks = window.document.querySelectorAll( '.pagereader-highlight' );
+	assert.strictEqual( marks.length, 1, 'exactly one highlight mark should exist at a time' );
+	assert.strictEqual( marks[ 0 ].textContent, 'Saint today lived well.' );
+} );
+
+test( 'a sentence spanning a wikilink is highlighted across all its text nodes, not just the first', function () {
+	// Real wiki markup splits a sentence's text across multiple text nodes
+	// constantly (links, bold, italic). A highlighter that only wraps the
+	// first node leaves most of the spoken sentence unhighlighted.
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">' +
+			'He was born in <a href="/wiki/Assisi">Assisi</a> in 1181. He loved animals.' +
+			'</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.strictEqual( speechState.utterances[ 0 ].text, 'He was born in Assisi in 1181.' );
+
+	speechState.utterances[ 0 ].onstart();
+
+	const marks = window.document.querySelectorAll( '.pagereader-highlight' );
+	assert.ok( marks.length >= 2, 'the sentence spans a link, so more than one node should be wrapped' );
+	const highlightedText = Array.prototype.map.call( marks, function ( m ) { return m.textContent; } ).join( '' );
+	assert.strictEqual( highlightedText, 'He was born in Assisi in 1181.' );
+	assert.ok(
+		Array.prototype.some.call( marks, function ( m ) { return m.textContent === 'Assisi'; } ),
+		'the link text itself should be one of the wrapped pieces'
+	);
+} );
+
+test( 'a sentence spanning bold text is highlighted across all its text nodes, and clears fully on the next sentence', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">' +
+			'Saint <b>Francis</b> was a friar. He founded an order.' +
+			'</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	speechState.utterances[ 0 ].onstart();
+
+	let marks = window.document.querySelectorAll( '.pagereader-highlight' );
+	assert.ok( marks.length >= 2 );
+	assert.strictEqual(
+		Array.prototype.map.call( marks, function ( m ) { return m.textContent; } ).join( '' ),
+		'Saint Francis was a friar.'
+	);
+
+	speechState.utterances[ 0 ].onend();
+	speechState.utterances[ 1 ].onstart();
+
+	marks = window.document.querySelectorAll( '.pagereader-highlight' );
+	assert.strictEqual(
+		Array.prototype.map.call( marks, function ( m ) { return m.textContent; } ).join( '' ),
+		'He founded an order.',
+		'the multi-node highlight from the first sentence must be fully cleared, not left behind'
+	);
+	assert.strictEqual(
+		window.document.querySelector( '.kids-readaloud' ).textContent,
+		'Saint Francis was a friar. He founded an order.',
+		'DOM text content must be unchanged after wrap/unwrap'
+	);
+} );
+
+test( 'clicking Stop mid-sentence prevents the in-flight utterance from advancing the queue', function () {
+	// Regression for the generation-guard: cancel() can still cause the
+	// utterance that was speaking to fire onend/onerror asynchronously --
+	// that must not be mistaken for "sentence finished, speak the next one".
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
+	);
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	const firstUtterance = speechState.utterances[ 0 ];
+
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.strictEqual( button.textContent, 'Read this page aloud', 'stopped back to idle' );
+
+	// Simulate the cancelled utterance's onend firing late, after stop.
+	firstUtterance.onend();
+
+	assert.strictEqual(
+		speechState.utterances.length, 1,
+		'a stale onend from the cancelled utterance must not speak a second sentence'
+	);
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 0 );
+} );
+
+test( 'highlight persists across pause and is cleared when the queue naturally finishes', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	speechState.utterances[ 0 ].onstart();
+
+	window.document.querySelector( '.pagereader-pause-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.ok( window.document.querySelector( '.pagereader-highlight' ), 'highlight remains visible while paused' );
+
+	speechState.utterances[ 0 ].onend();
+	speechState.utterances[ 1 ].onstart();
+	speechState.utterances[ 1 ].onend();
+
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 0 );
+	assert.strictEqual(
+		window.document.querySelector( '.kids-readaloud' ).textContent,
+		'Hello there. Saint today lived well.'
+	);
+} );
+
+test( 'wgPageReaderHighlightEnabled: false speaks the whole article as one utterance, matching pre-highlighting behavior', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>',
+		{ wgPageReaderHighlightEnabled: false }
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances.length, 1 );
+	assert.strictEqual( speechState.utterances[ 0 ].text, 'Hello there. Saint today lived well.' );
+	assert.strictEqual(
+		typeof speechState.utterances[ 0 ].onstart, 'undefined',
+		'no per-sentence highlight wiring when highlighting is disabled'
+	);
+
+	speechState.utterances[ 0 ].onend();
+	assert.strictEqual( speechState.utterances.length, 1, 'no queue to advance -- a single utterance covers everything' );
+} );
+
+test( 'a failure inside a sentence onstart highlight never breaks the read-along queue', function () {
+	const { window, speechState, consoleWarnings } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	// Force highlightChunk()'s Range usage to throw, simulating an
+	// unexpected DOM API failure -- must be caught, logged, and never
+	// prevent the sentence queue from continuing.
+	const originalCreateRange = window.document.createRange;
+	window.document.createRange = function () {
+		throw new Error( 'simulated Range failure' );
+	};
+	speechState.utterances[ 0 ].onstart();
+	window.document.createRange = originalCreateRange;
+
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 0 );
+	assert.ok( consoleWarnings.some( ( w ) => w.indexOf( 'PageReader highlight failed' ) !== -1 ) );
+
+	speechState.utterances[ 0 ].onend();
+	assert.strictEqual( speechState.utterances.length, 2, 'queue still advances despite the highlight failure' );
 } );
 
 console.log( '\n' + passed + ' passed, ' + failed + ' failed' );

@@ -34,6 +34,7 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 			'PageReaderVoicePitch' => 1.15,
 			'PageReaderVoiceRate' => 1.05,
 			'PageReaderVoiceGender' => 'auto',
+			'PageReaderHighlightEnabled' => true,
 			'PageReaderPreferredVoices' => [ 'female' => [ 'Samantha' ], 'male' => [ 'Daniel' ] ],
 		] );
 	}
@@ -195,6 +196,29 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
 
 		$this->assertSame( 'auto', $effective['voiceGender'] );
+	}
+
+	public function testHighlightEnabledOverlayOverridesLocalSettings(): void {
+		$this->baseConfig();
+		$this->editPage( 'MediaWiki:PageReader-config', '{"highlightEnabled": false}' );
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertFalse( $effective['highlightEnabled'] );
+	}
+
+	public function testNonBooleanHighlightEnabledOverlayIsDropped(): void {
+		// A loose (bool) cast on the string "false" would evaluate to true
+		// (a truthy non-empty string) -- the opposite of what a sysop
+		// typing "false" as a quoted string presumably intended.
+		$this->baseConfig();
+		$this->editPage( 'MediaWiki:PageReader-config', '{"highlightEnabled": "false"}' );
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertTrue( $effective['highlightEnabled'] );
 	}
 
 	public function testPreferredVoicesOverlayIsUsedVerbatim(): void {
