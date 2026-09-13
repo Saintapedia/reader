@@ -118,6 +118,18 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 		$this->assertNotContains( 'ext.pageReader', $out->getModules() );
 	}
 
+	public function testNoPageReaderHighlightSwitchSuppressesHighlightOnlyOnEligiblePage(): void {
+		$this->overridePageReaderConfig();
+		$this->editPage( 'Kids:Highlight opted out', "Some content.\n__NOPAGEREADERHIGHLIGHT__" );
+
+		$out = $this->runBeforePageDisplay( 'Kids:Highlight opted out' );
+
+		// The button/read-aloud module itself must still load -- this magic
+		// word only suppresses highlighting, unlike __NOPAGEREADER__.
+		$this->assertContains( 'ext.pageReader', $out->getModules() );
+		$this->assertFalse( $out->getJsConfigVars()['wgPageReaderHighlightEnabled'] );
+	}
+
 	public function testOnWikiOverlayNamespaceMakesPageEligible(): void {
 		$this->overridePageReaderConfig( [ 'PageReaderConfigPage' => 'PageReader-config' ] );
 		$this->editPage( 'MediaWiki:PageReader-config', '{"namespaces": [1004, 0]}' );

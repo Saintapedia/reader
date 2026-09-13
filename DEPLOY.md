@@ -90,6 +90,12 @@ one gender doesn't clobber the other's LocalSettings value, e.g.:
 Add `__NOPAGEREADER__` anywhere in a page's wikitext to suppress the
 button on that one page.
 
+Add `__NOPAGEREADERHIGHLIGHT__` anywhere in a page's wikitext to keep
+the button and speech working normally on that page but suppress
+read-along sentence highlighting — useful for a page where PageReader
+is enabled outside the Kids namespace and the highlight styling isn't
+wanted.
+
 ## Editor-friendly templates (optional, on-wiki content, not code)
 
 Editors can mark read-aloud content and control button placement with
@@ -116,6 +122,10 @@ The button (and voice select/pause button) is inserted immediately
 after wherever this template sits, independent of where the
 `ReadAloud/start`/`end` pair marks the actual content.
 
+**`Template:ReadAloudNoHighlight`** (content: `__NOPAGEREADERHIGHLIGHT__`)
+— optional; lets an editor suppress read-along highlighting on one page
+by writing `{{ReadAloudNoHighlight}}` instead of the raw magic word.
+
 ## Smoke checklist
 
 | Check | Expected |
@@ -126,6 +136,7 @@ after wherever this template sits, independent of where the
 | Load a page named `Portal:KidsCorner` | Button does **not** appear (module not requested — outside the exact-or-subpage match) |
 | Load any non-Kids page | `ext.pageReader` module not requested (check network panel / `mw.loader.getState('ext.pageReader')`) |
 | Add `__NOPAGEREADER__` to a Kids page | Button no longer appears |
+| Add `__NOPAGEREADERHIGHLIGHT__` to a Kids page | Button still appears and speaks normally, but sentences no longer highlight |
 | Wrap content with `{{ReadAloud/start}}`/`{{ReadAloud/end}}` on any eligible page | Button appears per placement config, speech covers only the wrapped content |
 | Add `{{ReadAloudButton}}` elsewhere on the same page | Button (and voice select/pause button) moves to right after the template, overriding the configured placement |
 | Edit `MediaWiki:PageReader-config` to add a namespace | Takes effect without a restart |

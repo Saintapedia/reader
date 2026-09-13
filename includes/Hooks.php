@@ -19,6 +19,7 @@ class Hooks implements BeforePageDisplayHook, GetDoubleUnderscoreIDsHook {
 
 	public function onGetDoubleUnderscoreIDs( &$doubleUnderscoreIDs ) {
 		$doubleUnderscoreIDs[] = 'nopagereader';
+		$doubleUnderscoreIDs[] = 'nopagereaderhighlight';
 	}
 
 	public function onBeforePageDisplay( $out, $skin ): void {
@@ -68,6 +69,16 @@ class Hooks implements BeforePageDisplayHook, GetDoubleUnderscoreIDsHook {
 			return;
 		}
 
+		// A narrower per-page opt-out than __NOPAGEREADER__ above: the
+		// button and read-aloud still work normally, only per-sentence
+		// highlighting is suppressed for this one page -- e.g. an editor
+		// using PageReader on a non-Kids page who doesn't want the
+		// highlight styling there. Same page-prop pattern as nopagereader,
+		// checked separately since it must not suppress the whole feature.
+		$highlightProps = MediaWikiServices::getInstance()->getPageProps()
+			->getProperties( $title, 'nopagereaderhighlight' );
+		$highlightEnabled = $effective['highlightEnabled'] && $highlightProps === [];
+
 		$out->addModules( 'ext.pageReader' );
 		$out->addJsConfigVars( [
 			'wgPageReaderContentClass' => $effective['contentClass'],
@@ -77,7 +88,7 @@ class Hooks implements BeforePageDisplayHook, GetDoubleUnderscoreIDsHook {
 			'wgPageReaderVoicePitch' => $effective['voicePitch'],
 			'wgPageReaderVoiceRate' => $effective['voiceRate'],
 			'wgPageReaderVoiceGender' => $effective['voiceGender'],
-			'wgPageReaderHighlightEnabled' => $effective['highlightEnabled'],
+			'wgPageReaderHighlightEnabled' => $highlightEnabled,
 			'wgPageReaderPreferredVoices' => $effective['preferredVoices'],
 		] );
 	}

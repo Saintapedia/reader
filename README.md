@@ -20,7 +20,11 @@ for the full history and rationale).
   content-targeting without a code deploy — see [DEPLOY.md](./DEPLOY.md)
   for the exact list of overridable keys.
 - A content editor can opt a single page out with `__NOPAGEREADER__`
-  anywhere in that page's wikitext — no config access needed.
+  anywhere in that page's wikitext — no config access needed. A
+  narrower `__NOPAGEREADERHIGHLIGHT__` opts just that page out of
+  read-along sentence highlighting while keeping the button and speech
+  working normally — e.g. for a non-Kids page where PageReader is
+  enabled but the highlight styling isn't wanted.
 - The button can be placed anywhere in any article: put
   `class="kids-readaloud"` (configurable via `$wgPageReaderContentClass`
   — the default matches existing Saintapedia Kids content) on any
