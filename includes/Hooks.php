@@ -62,10 +62,13 @@ class Hooks implements BeforePageDisplayHook, GetDoubleUnderscoreIDsHook {
 		}
 
 		// DB-backed opt-out check, deliberately run only for pages that
-		// already passed the cheap, in-memory eligibility check above.
-		$props = MediaWikiServices::getInstance()->getPageProps()
-			->getProperties( $title, 'nopagereader' );
-		if ( $props !== [] ) {
+		// already passed the cheap, in-memory eligibility check above. Both
+		// magic words are fetched in a single getProperties() call (one
+		// page_props query) rather than one call per property name.
+		$pageProps = MediaWikiServices::getInstance()->getPageProps()
+			->getProperties( $title, [ 'nopagereader', 'nopagereaderhighlight' ] );
+		$props = $pageProps[ $title->getArticleID() ] ?? [];
+		if ( isset( $props['nopagereader'] ) ) {
 			return;
 		}
 
@@ -73,11 +76,8 @@ class Hooks implements BeforePageDisplayHook, GetDoubleUnderscoreIDsHook {
 		// button and read-aloud still work normally, only per-sentence
 		// highlighting is suppressed for this one page -- e.g. an editor
 		// using PageReader on a non-Kids page who doesn't want the
-		// highlight styling there. Same page-prop pattern as nopagereader,
-		// checked separately since it must not suppress the whole feature.
-		$highlightProps = MediaWikiServices::getInstance()->getPageProps()
-			->getProperties( $title, 'nopagereaderhighlight' );
-		$highlightEnabled = $effective['highlightEnabled'] && $highlightProps === [];
+		// highlight styling there.
+		$highlightEnabled = $effective['highlightEnabled'] && !isset( $props['nopagereaderhighlight'] );
 
 		$out->addModules( 'ext.pageReader' );
 		$out->addJsConfigVars( [
