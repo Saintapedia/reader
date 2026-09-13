@@ -17,8 +17,17 @@
 	// that pitch/rate scaling is broken), so this falls back to UA
 	// sniffing -- narrowly scoped to skipping our pitch/rate tuning only,
 	// not any other behavior.
-	function isFirefox() {
-		return typeof navigator !== 'undefined' && /Firefox\//.test( navigator.userAgent || '' );
+	//
+	// Deliberately Linux-specific, not "any Firefox": Firefox for Windows
+	// and macOS use entirely different native speech backends (SAPI,
+	// NSSpeechSynthesizer) than the Linux speech-dispatcher/espeak-ng
+	// bridge this bug was isolated to, and were never shown to be
+	// affected -- a bare Firefox check would also silently discard a
+	// sysop's tuned pitch/rate for those readers. Android is excluded
+	// explicitly since its user agent can also contain "Linux".
+	function isFirefoxOnLinux() {
+		var ua = ( typeof navigator !== 'undefined' && navigator.userAgent ) || '';
+		return /Firefox\//.test( ua ) && /Linux/.test( ua ) && !/Android/.test( ua );
 	}
 
 	function getSkipSelectors() {
@@ -580,10 +589,11 @@
 				speechGeneration++;
 				var myGeneration = speechGeneration;
 
-				// See isFirefox() -- Firefox gets the browser's own default
-				// pitch/rate (1/1) instead of the configured tuning.
-				var pitch = isFirefox() ? 1 : clampNumber( mw.config.get( 'wgPageReaderVoicePitch' ), 0, 2, 1 );
-				var rate = isFirefox() ? 1 : clampNumber( mw.config.get( 'wgPageReaderVoiceRate' ), 0.1, 10, 1 );
+				// See isFirefoxOnLinux() -- Firefox on Linux gets the browser's
+				// own default pitch/rate (1/1) instead of the configured tuning.
+				var skipPitchRateTuning = isFirefoxOnLinux();
+				var pitch = skipPitchRateTuning ? 1 : clampNumber( mw.config.get( 'wgPageReaderVoicePitch' ), 0, 2, 1 );
+				var rate = skipPitchRateTuning ? 1 : clampNumber( mw.config.get( 'wgPageReaderVoiceRate' ), 0.1, 10, 1 );
 				var voiceSelect = findVoiceSelect( button );
 				var genderPreference = voiceSelect ? voiceSelect.value : mw.config.get( 'wgPageReaderVoiceGender' );
 				var voice = pickVoice( genderPreference );
@@ -730,12 +740,21 @@
 					speakWholeArticle();
 				}
 
-				speaking = true;
-				button.textContent = labelStop;
-				button.classList.add( 'pagereader-speaking' );
-				button.setAttribute( 'aria-pressed', 'true' );
-				if ( pauseButton ) {
-					pauseButton.hidden = false;
+				// Guarded by generation: speakSentences() calls speak() for
+				// every sentence synchronously above, so a queued utterance
+				// erroring out (or otherwise firing a synchronous onerror) can
+				// already have called stopSpeaking() -- resetting to idle --
+				// before execution reaches here. Without this check, this
+				// block would unconditionally stomp that reset back to a
+				// "speaking" UI even though playback was already aborted.
+				if ( myGeneration === speechGeneration ) {
+					speaking = true;
+					button.textContent = labelStop;
+					button.classList.add( 'pagereader-speaking' );
+					button.setAttribute( 'aria-pressed', 'true' );
+					if ( pauseButton ) {
+						pauseButton.hidden = false;
+					}
 				}
 			} catch ( e ) {
 				if ( window.console && console.warn ) {

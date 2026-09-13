@@ -493,25 +493,26 @@ test( 'out-of-range pitch/rate config values are clamped client-side', function 
 	assert.strictEqual( speechState.utterances[ 0 ].rate, 0.1 );
 } );
 
-const FIREFOX_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0';
+const FIREFOX_LINUX_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0';
+const FIREFOX_WINDOWS_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0';
 
-test( 'Firefox gets the browser default pitch/rate (1/1) regardless of config', function () {
+test( 'Firefox on Linux gets the browser default pitch/rate (1/1) regardless of config', function () {
 	// Works around a Firefox/Linux (speech-dispatcher + espeak-ng) bug
 	// where a non-default pitch/rate produces badly garbled audio; a
 	// default-pitch/rate utterance on the same backend is unaffected.
 	const { window, speechState } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
 		{ wgPageReaderVoicePitch: 1.3, wgPageReaderVoiceRate: 0.9 },
-		null, null, null, null, FIREFOX_USER_AGENT
+		null, null, null, null, FIREFOX_LINUX_USER_AGENT
 	);
 	window.document.querySelector( '.pagereader-button' )
 		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 
-	assert.strictEqual( speechState.utterances[ 0 ].pitch, 1, 'Firefox must ignore the configured pitch tuning' );
-	assert.strictEqual( speechState.utterances[ 0 ].rate, 1, 'Firefox must ignore the configured rate tuning' );
+	assert.strictEqual( speechState.utterances[ 0 ].pitch, 1, 'Firefox/Linux must ignore the configured pitch tuning' );
+	assert.strictEqual( speechState.utterances[ 0 ].rate, 1, 'Firefox/Linux must ignore the configured rate tuning' );
 } );
 
-test( 'Firefox still applies voice-gender selection despite skipping pitch/rate tuning', function () {
+test( 'Firefox on Linux still applies voice-gender selection despite skipping pitch/rate tuning', function () {
 	const voices = [
 		{ name: 'Generic Voice' },
 		{ name: 'Google UK English Female' },
@@ -519,13 +520,26 @@ test( 'Firefox still applies voice-gender selection despite skipping pitch/rate 
 	const { window, speechState } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
 		{ wgPageReaderVoiceGender: 'female', wgPageReaderVoicePitch: 1.3, wgPageReaderVoiceRate: 0.9 },
-		null, voices, null, null, FIREFOX_USER_AGENT
+		null, voices, null, null, FIREFOX_LINUX_USER_AGENT
 	);
 	window.document.querySelector( '.pagereader-button' )
 		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 
 	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Google UK English Female' );
 	assert.strictEqual( speechState.utterances[ 0 ].pitch, 1 );
+} );
+
+test( 'Firefox on Windows is unaffected -- the workaround is scoped to Linux, not Firefox generally', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderVoicePitch: 1.3, wgPageReaderVoiceRate: 0.9 },
+		null, null, null, null, FIREFOX_WINDOWS_USER_AGENT
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances[ 0 ].pitch, 1.3, 'Firefox/Windows never had the garbling bug -- tuning must apply' );
+	assert.strictEqual( speechState.utterances[ 0 ].rate, 0.9 );
 } );
 
 test( 'a non-Firefox browser is unaffected by the Firefox pitch/rate workaround', function () {
@@ -1138,6 +1152,37 @@ test( 'multi-sentence content is spoken as a queue, every sentence queued up fro
 		'only the last queued utterance ends the read -- speechSynthesis itself plays the queue in order'
 	);
 	assert.strictEqual( typeof speechState.utterances[ 1 ].onend, 'function' );
+} );
+
+test( 'a synchronous onerror during the speak-queue loop does not leave the UI stuck showing "speaking"', function () {
+	// Regression test: speakSentences() calls speak() for every sentence
+	// synchronously in one loop; if a queued utterance's onerror fires
+	// synchronously (before the loop, and the click handler, returns),
+	// stopSpeaking() already reset everything to idle -- the trailing
+	// "speaking = true" block that runs after the loop must not stomp
+	// that reset back to a "speaking" UI.
+	const { window, speechState, speechSynthesis } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
+	);
+	const originalSpeak = speechSynthesis.speak;
+	let speakCalls = 0;
+	speechSynthesis.speak = function ( utterance ) {
+		originalSpeak( utterance );
+		speakCalls++;
+		if ( speakCalls === 1 ) {
+			utterance.onerror();
+		}
+	};
+
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual(
+		button.textContent, 'Read this page aloud',
+		'must not be stuck showing "Stop reading" after a synchronous mid-queue error'
+	);
+	assert.ok( !button.classList.contains( 'pagereader-speaking' ) );
+	assert.strictEqual( button.getAttribute( 'aria-pressed' ), 'false' );
 } );
 
 test( 'onstart highlights the sentence currently playing, replacing the previous one', function () {
