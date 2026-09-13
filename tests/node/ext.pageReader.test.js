@@ -104,10 +104,11 @@ function makeSpeechSynthesis( voices, supportsPause ) {
  * given body HTML and config, and fires the wikipage.content hook once
  * (simulating MediaWiki's normal page-load behavior).
  */
-function buildDom( bodyHtml, configOverrides, msgOverrides, voices, seedLocalStorage, supportsPause ) {
+function buildDom( bodyHtml, configOverrides, msgOverrides, voices, seedLocalStorage, supportsPause, userAgent ) {
 	const dom = new JSDOM( '<!doctype html><html><body>' + bodyHtml + '</body></html>', {
 		url: 'https://saintapedia.org/wiki/Kids:Test',
 		runScripts: 'outside-only',
+		resources: userAgent ? { userAgent: userAgent } : undefined,
 	} );
 	const window = dom.window;
 	if ( seedLocalStorage ) {
@@ -490,6 +491,53 @@ test( 'out-of-range pitch/rate config values are clamped client-side', function 
 
 	assert.strictEqual( speechState.utterances[ 0 ].pitch, 2 );
 	assert.strictEqual( speechState.utterances[ 0 ].rate, 0.1 );
+} );
+
+const FIREFOX_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0';
+
+test( 'Firefox gets the browser default pitch/rate (1/1) regardless of config', function () {
+	// Works around a Firefox/Linux (speech-dispatcher + espeak-ng) bug
+	// where a non-default pitch/rate produces badly garbled audio; a
+	// default-pitch/rate utterance on the same backend is unaffected.
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderVoicePitch: 1.3, wgPageReaderVoiceRate: 0.9 },
+		null, null, null, null, FIREFOX_USER_AGENT
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances[ 0 ].pitch, 1, 'Firefox must ignore the configured pitch tuning' );
+	assert.strictEqual( speechState.utterances[ 0 ].rate, 1, 'Firefox must ignore the configured rate tuning' );
+} );
+
+test( 'Firefox still applies voice-gender selection despite skipping pitch/rate tuning', function () {
+	const voices = [
+		{ name: 'Generic Voice' },
+		{ name: 'Google UK English Female' },
+	];
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderVoiceGender: 'female', wgPageReaderVoicePitch: 1.3, wgPageReaderVoiceRate: 0.9 },
+		null, voices, null, null, FIREFOX_USER_AGENT
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Google UK English Female' );
+	assert.strictEqual( speechState.utterances[ 0 ].pitch, 1 );
+} );
+
+test( 'a non-Firefox browser is unaffected by the Firefox pitch/rate workaround', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderVoicePitch: 1.3, wgPageReaderVoiceRate: 0.9 }
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances[ 0 ].pitch, 1.3 );
+	assert.strictEqual( speechState.utterances[ 0 ].rate, 0.9 );
 } );
 
 test( "voiceGender 'female' picks the first voice whose name contains 'female'", function () {

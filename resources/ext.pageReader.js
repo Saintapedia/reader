@@ -7,6 +7,20 @@
 ( function () {
 	'use strict';
 
+	// Firefox on Linux (via its speech-dispatcher/espeak-ng bridge) was
+	// found to produce badly garbled audio -- described as "a mix of a
+	// whisper and an alien/ghost" -- specifically when a non-default
+	// pitch/rate is applied to an utterance; a plain default utterance on
+	// the same machine/voice sounds normal (robotic, but intact). Chrome
+	// and the same voice's own default settings are unaffected. There is
+	// no feature-detection for this (the Web Speech API gives no signal
+	// that pitch/rate scaling is broken), so this falls back to UA
+	// sniffing -- narrowly scoped to skipping our pitch/rate tuning only,
+	// not any other behavior.
+	function isFirefox() {
+		return typeof navigator !== 'undefined' && /Firefox\//.test( navigator.userAgent || '' );
+	}
+
 	function getSkipSelectors() {
 		var configured = mw.config.get( 'wgPageReaderSkipSelectors' );
 		return Array.isArray( configured ) ? configured : [];
@@ -566,8 +580,10 @@
 				speechGeneration++;
 				var myGeneration = speechGeneration;
 
-				var pitch = clampNumber( mw.config.get( 'wgPageReaderVoicePitch' ), 0, 2, 1 );
-				var rate = clampNumber( mw.config.get( 'wgPageReaderVoiceRate' ), 0.1, 10, 1 );
+				// See isFirefox() -- Firefox gets the browser's own default
+				// pitch/rate (1/1) instead of the configured tuning.
+				var pitch = isFirefox() ? 1 : clampNumber( mw.config.get( 'wgPageReaderVoicePitch' ), 0, 2, 1 );
+				var rate = isFirefox() ? 1 : clampNumber( mw.config.get( 'wgPageReaderVoiceRate' ), 0.1, 10, 1 );
 				var voiceSelect = findVoiceSelect( button );
 				var genderPreference = voiceSelect ? voiceSelect.value : mw.config.get( 'wgPageReaderVoiceGender' );
 				var voice = pickVoice( genderPreference );
