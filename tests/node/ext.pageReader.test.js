@@ -1017,6 +1017,36 @@ test( 'a synchronous onerror during the speak-queue loop does not leave the UI s
 	assert.strictEqual( button.getAttribute( 'aria-pressed' ), 'false' );
 } );
 
+test( 'a synchronous mid-queue onerror stops queuing the remaining sentences entirely', function () {
+	// Regression test: cancel() inside onerror only clears what's already
+	// queued at that instant -- it does nothing to stop a still-running
+	// queuing loop from calling speak() on sentences that come after the
+	// one that errored. speakSentences() must itself stop queuing once
+	// stopSpeaking() has bumped speechGeneration.
+	const { window, speechState, speechSynthesis } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">' +
+			'Hello there. Saint today lived well. A third sentence here.' +
+			'</div></div>'
+	);
+	const originalSpeak = speechSynthesis.speak;
+	let speakCalls = 0;
+	speechSynthesis.speak = function ( utterance ) {
+		originalSpeak( utterance );
+		speakCalls++;
+		if ( speakCalls === 1 ) {
+			utterance.onerror();
+		}
+	};
+
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual(
+		speechState.utterances.length, 1,
+		'sentences after the one that errored must never be queued via speak()'
+	);
+} );
+
 test( 'onstart highlights the sentence currently playing, replacing the previous one', function () {
 	const { window, speechState } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'

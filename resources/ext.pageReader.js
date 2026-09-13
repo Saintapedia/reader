@@ -584,57 +584,80 @@
 				// 250ms. onstart (not the speak() call itself) still drives
 				// highlighting, so each sentence still lights up exactly when
 				// its audio actually starts.
-				function speakSentences( sentenceList ) {
-					queuedUtterances = sentenceList.map( function ( sentence ) {
-						return new window.SpeechSynthesisUtterance( sentence.text );
-					} );
+				// Builds, wires, and speak()s one sentence's utterance. A named
+				// function (not an inline closure inside the loop below) so each
+				// call gets its own fresh `sentence`/`utterance` bindings -- this
+				// file uses `var` throughout, which does NOT create a new binding
+				// per loop iteration the way `let` or Array#forEach's callback
+				// argument would, so inlining this directly in the for-loop below
+				// would leave every utterance's onstart closing over the SAME
+				// (final) sentence instead of its own.
+				function queueSentence( sentenceList, index ) {
+					var sentence = sentenceList[ index ];
+					var utterance = new window.SpeechSynthesisUtterance( sentence.text );
+					applyVoiceSettings( utterance );
+					queuedUtterances.push( utterance );
 
-					queuedUtterances.forEach( function ( utterance, index ) {
-						var sentence = sentenceList[ index ];
-						applyVoiceSettings( utterance );
-
-						utterance.onstart = function () {
-							if ( myGeneration !== speechGeneration ) {
-								return;
-							}
-							try {
-								currentHighlight = clearHighlight( currentHighlight );
-								currentHighlight = highlightChunk(
-									contentRoot, model.skipPredicate, sentence.start, sentence.end - sentence.start
-								);
-							} catch ( e ) {
-								if ( window.console && console.warn ) {
-									console.warn( 'PageReader highlight failed', e );
-								}
-								currentHighlight = null;
-							}
-						};
-
-						// Only the last queued utterance's onend means the whole
-						// read is finished -- speechSynthesis itself already plays
-						// the queued utterances in order, so the others need no
-						// onend handler here.
-						if ( index === sentenceList.length - 1 ) {
-							utterance.onend = function () {
-								if ( myGeneration === speechGeneration ) {
-									stopSpeaking();
-								}
-							};
+					utterance.onstart = function () {
+						if ( myGeneration !== speechGeneration ) {
+							return;
 						}
+						try {
+							currentHighlight = clearHighlight( currentHighlight );
+							currentHighlight = highlightChunk(
+								contentRoot, model.skipPredicate, sentence.start, sentence.end - sentence.start
+							);
+						} catch ( e ) {
+							if ( window.console && console.warn ) {
+								console.warn( 'PageReader highlight failed', e );
+							}
+							currentHighlight = null;
+						}
+					};
 
-						// Also cancels every other still-queued sentence -- without
-						// this, an error partway through would leave the rest of the
-						// article still queued and playing while the button/UI had
-						// already reset to idle.
-						utterance.onerror = function () {
+					// Only the last queued utterance's onend means the whole
+					// read is finished -- speechSynthesis itself already plays
+					// the queued utterances in order, so the others need no
+					// onend handler here.
+					if ( index === sentenceList.length - 1 ) {
+						utterance.onend = function () {
 							if ( myGeneration === speechGeneration ) {
-								window.speechSynthesis.cancel();
 								stopSpeaking();
 							}
 						};
+					}
 
-						window.speechSynthesis.speak( utterance );
-					} );
+					// Also cancels every other still-queued sentence -- without
+					// this, an error partway through would leave the rest of the
+					// article still queued and playing while the button/UI had
+					// already reset to idle.
+					utterance.onerror = function () {
+						if ( myGeneration === speechGeneration ) {
+							window.speechSynthesis.cancel();
+							stopSpeaking();
+						}
+					};
+
+					window.speechSynthesis.speak( utterance );
+				}
+
+				function speakSentences( sentenceList ) {
+					queuedUtterances = [];
+
+					// A real loop (not Array#forEach, which cannot be stopped
+					// early) so that a synchronous onerror/onend firing mid-loop
+					// -- which bumps speechGeneration via stopSpeaking() -- stops
+					// this loop from queuing any further sentences. Without this
+					// check, cancel() only clears what's already queued at that
+					// instant; every sentence still to come in this loop would
+					// still get speak()'d and would keep audibly playing even
+					// though the button/UI had already reset to idle.
+					for ( var index = 0; index < sentenceList.length; index++ ) {
+						if ( myGeneration !== speechGeneration ) {
+							break;
+						}
+						queueSentence( sentenceList, index );
+					}
 				}
 
 				if ( sentences.length ) {
