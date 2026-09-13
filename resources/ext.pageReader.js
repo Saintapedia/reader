@@ -448,9 +448,13 @@
 		// remote/network voice, which takes longer), silently dropping
 		// onend and stalling this hand-rolled queue after one sentence.
 		// This is the same class of bug that likely broke the original
-		// word-level highlighting attempt. Assigned right after each
-		// `new SpeechSynthesisUtterance(...)`, cleared in stopSpeaking().
-		var currentUtterance = null;
+		// word-level highlighting attempt. Holds every utterance in the
+		// current queue, not just the one currently speaking -- see
+		// speakSentences() below, which queues the whole article up front
+		// rather than one utterance at a time, so each queued-but-not-yet-
+		// speaking utterance still needs its own strong reference. Cleared
+		// in stopSpeaking().
+		var queuedUtterances = null;
 		// Bumped on every stop/restart; every utterance callback below
 		// captures the generation it was created under and checks it's
 		// still current before doing anything. Guards against a stray
@@ -464,7 +468,7 @@
 			speechGeneration++;
 			speaking = false;
 			paused = false;
-			currentUtterance = null;
+			queuedUtterances = null;
 			currentHighlight = clearHighlight( currentHighlight );
 			button.textContent = labelIdle;
 			button.classList.remove( 'pagereader-speaking' );
@@ -518,7 +522,7 @@
 				function speakWholeArticle() {
 					var utterance = new window.SpeechSynthesisUtterance( model.text );
 					applyVoiceSettings( utterance );
-					currentUtterance = utterance;
+					queuedUtterances = [ utterance ];
 					utterance.onend = function () {
 						if ( myGeneration === speechGeneration ) {
 							stopSpeaking();
@@ -532,55 +536,83 @@
 					window.speechSynthesis.speak( utterance );
 				}
 
-				// onstart/onend are reliably supported everywhere, unlike
+				// onstart is reliably supported everywhere, unlike
 				// SpeechSynthesisUtterance's onboundary (Firefox in
 				// particular only ever reports sentence-level boundaries,
-				// if any at all) -- chaining one utterance per sentence off
-				// onend sidesteps onboundary entirely, trading word-level
-				// granularity for actually working consistently.
-				function speakSentence( index ) {
-					if ( myGeneration !== speechGeneration ) {
-						return;
-					}
-					if ( index >= sentences.length ) {
-						stopSpeaking();
-						return;
-					}
-					var sentence = sentences[ index ];
-					var utterance = new window.SpeechSynthesisUtterance( sentence.text );
-					applyVoiceSettings( utterance );
-					currentUtterance = utterance;
-					utterance.onstart = function () {
-						if ( myGeneration !== speechGeneration ) {
-							return;
-						}
-						try {
-							currentHighlight = clearHighlight( currentHighlight );
-							currentHighlight = highlightChunk(
-								contentRoot, model.skipPredicate, sentence.start, sentence.end - sentence.start
-							);
-						} catch ( e ) {
-							if ( window.console && console.warn ) {
-								console.warn( 'PageReader highlight failed', e );
+				// if any at all -- Chrome's own network voices were measured
+				// firing *no* boundary events at all for a whole-article
+				// utterance). Per-sentence utterances sidestep onboundary
+				// entirely, trading word-level granularity for actually
+				// working consistently.
+				//
+				// All sentences are queued via speak() up front, in order,
+				// rather than reactively from the previous utterance's onend:
+				// speechSynthesis.speak() already plays queued utterances back
+				// to back on its own, and calling it only after the previous
+				// utterance fully ends forces Chrome to wait for a full network
+				// round-trip to a remote voice before even starting the next
+				// utterance's synthesis -- measured at ~1s of dead air at every
+				// sentence boundary for a Chrome network voice. Queuing
+				// everything up front lets Chrome synthesize a later sentence
+				// while an earlier one is still playing, which measured under
+				// 250ms. onstart (not the speak() call itself) still drives
+				// highlighting, so each sentence still lights up exactly when
+				// its audio actually starts.
+				function speakSentences( sentenceList ) {
+					queuedUtterances = sentenceList.map( function ( sentence ) {
+						return new window.SpeechSynthesisUtterance( sentence.text );
+					} );
+
+					queuedUtterances.forEach( function ( utterance, index ) {
+						var sentence = sentenceList[ index ];
+						applyVoiceSettings( utterance );
+
+						utterance.onstart = function () {
+							if ( myGeneration !== speechGeneration ) {
+								return;
 							}
-							currentHighlight = null;
+							try {
+								currentHighlight = clearHighlight( currentHighlight );
+								currentHighlight = highlightChunk(
+									contentRoot, model.skipPredicate, sentence.start, sentence.end - sentence.start
+								);
+							} catch ( e ) {
+								if ( window.console && console.warn ) {
+									console.warn( 'PageReader highlight failed', e );
+								}
+								currentHighlight = null;
+							}
+						};
+
+						// Only the last queued utterance's onend means the whole
+						// read is finished -- speechSynthesis itself already plays
+						// the queued utterances in order, so the others need no
+						// onend handler here.
+						if ( index === sentenceList.length - 1 ) {
+							utterance.onend = function () {
+								if ( myGeneration === speechGeneration ) {
+									stopSpeaking();
+								}
+							};
 						}
-					};
-					utterance.onend = function () {
-						if ( myGeneration === speechGeneration ) {
-							speakSentence( index + 1 );
-						}
-					};
-					utterance.onerror = function () {
-						if ( myGeneration === speechGeneration ) {
-							stopSpeaking();
-						}
-					};
-					window.speechSynthesis.speak( utterance );
+
+						// Also cancels every other still-queued sentence -- without
+						// this, an error partway through would leave the rest of the
+						// article still queued and playing while the button/UI had
+						// already reset to idle.
+						utterance.onerror = function () {
+							if ( myGeneration === speechGeneration ) {
+								window.speechSynthesis.cancel();
+								stopSpeaking();
+							}
+						};
+
+						window.speechSynthesis.speak( utterance );
+					} );
 				}
 
 				if ( sentences.length ) {
-					speakSentence( 0 );
+					speakSentences( sentences );
 				} else {
 					speakWholeArticle();
 				}

@@ -904,20 +904,24 @@ test( 'button anchor: a nested re-fire scoped to just the content wrapper does n
 	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
 } );
 
-test( 'multi-sentence content is spoken as a queue, one utterance per sentence', function () {
+test( 'multi-sentence content is spoken as a queue, every sentence queued up front', function () {
 	const { window, speechState } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
 	);
 	window.document.querySelector( '.pagereader-button' )
 		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 
-	assert.strictEqual( speechState.utterances.length, 1, 'only the first sentence is spoken up front' );
+	assert.strictEqual(
+		speechState.utterances.length, 2,
+		'every sentence is queued via speak() immediately, not chained reactively from onend'
+	);
 	assert.strictEqual( speechState.utterances[ 0 ].text, 'Hello there.' );
-
-	speechState.utterances[ 0 ].onend();
-
-	assert.strictEqual( speechState.utterances.length, 2, 'onend advances the queue to the next sentence' );
 	assert.strictEqual( speechState.utterances[ 1 ].text, 'Saint today lived well.' );
+	assert.strictEqual(
+		speechState.utterances[ 0 ].onend, null,
+		'only the last queued utterance ends the read -- speechSynthesis itself plays the queue in order'
+	);
+	assert.strictEqual( typeof speechState.utterances[ 1 ].onend, 'function' );
 } );
 
 test( 'onstart highlights the sentence currently playing, replacing the previous one', function () {
@@ -931,7 +935,6 @@ test( 'onstart highlights the sentence currently playing, replacing the previous
 	let mark = window.document.querySelector( '.pagereader-highlight' );
 	assert.strictEqual( mark.textContent, 'Hello there.' );
 
-	speechState.utterances[ 0 ].onend();
 	speechState.utterances[ 1 ].onstart();
 	const marks = window.document.querySelectorAll( '.pagereader-highlight' );
 	assert.strictEqual( marks.length, 1, 'exactly one highlight mark should exist at a time' );
@@ -980,7 +983,6 @@ test( 'a sentence spanning bold text is highlighted across all its text nodes, a
 		'Saint Francis was a friar.'
 	);
 
-	speechState.utterances[ 0 ].onend();
 	speechState.utterances[ 1 ].onstart();
 
 	marks = window.document.querySelectorAll( '.pagereader-highlight' );
@@ -996,27 +998,29 @@ test( 'a sentence spanning bold text is highlighted across all its text nodes, a
 	);
 } );
 
-test( 'clicking Stop mid-sentence prevents the in-flight utterance from advancing the queue', function () {
-	// Regression for the generation-guard: cancel() can still cause the
-	// utterance that was speaking to fire onend/onerror asynchronously --
-	// that must not be mistaken for "sentence finished, speak the next one".
+test( 'clicking Stop mid-sentence: a stale onend from the cancelled queue does not reactivate it', function () {
+	// Regression for the generation-guard: cancel() can still cause a
+	// queued utterance to fire onend/onerror asynchronously afterwards --
+	// that must not be mistaken for "read still in progress".
 	const { window, speechState } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
 	);
 	const button = window.document.querySelector( '.pagereader-button' );
 	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
-	const firstUtterance = speechState.utterances[ 0 ];
+	// Both sentences are queued immediately; only the last carries onend.
+	const lastUtterance = speechState.utterances[ 1 ];
 
 	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 	assert.strictEqual( button.textContent, 'Read this page aloud', 'stopped back to idle' );
 
-	// Simulate the cancelled utterance's onend firing late, after stop.
-	firstUtterance.onend();
+	// Simulate the cancelled queue's last utterance firing onend late, after stop.
+	lastUtterance.onend();
 
 	assert.strictEqual(
-		speechState.utterances.length, 1,
-		'a stale onend from the cancelled utterance must not speak a second sentence'
+		speechState.utterances.length, 2,
+		'a stale onend from the cancelled queue must not queue any further sentences'
 	);
+	assert.strictEqual( button.textContent, 'Read this page aloud', 'stays idle after the stale onend' );
 	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 0 );
 } );
 
@@ -1032,7 +1036,6 @@ test( 'highlight persists across pause and is cleared when the queue naturally f
 		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 	assert.ok( window.document.querySelector( '.pagereader-highlight' ), 'highlight remains visible while paused' );
 
-	speechState.utterances[ 0 ].onend();
 	speechState.utterances[ 1 ].onstart();
 	speechState.utterances[ 1 ].onend();
 
@@ -1082,8 +1085,14 @@ test( 'a failure inside a sentence onstart highlight never breaks the read-along
 	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 0 );
 	assert.ok( consoleWarnings.some( ( w ) => w.indexOf( 'PageReader highlight failed' ) !== -1 ) );
 
-	speechState.utterances[ 0 ].onend();
-	assert.strictEqual( speechState.utterances.length, 2, 'queue still advances despite the highlight failure' );
+	// The rest of the queue -- already speak()'d up front -- must be
+	// unaffected by the earlier highlight failure.
+	assert.strictEqual( speechState.utterances.length, 2, 'the whole queue was already speak()\'d up front' );
+	speechState.utterances[ 1 ].onstart();
+	assert.ok(
+		window.document.querySelector( '.pagereader-highlight' ),
+		'a later sentence in the queue can still highlight normally'
+	);
 } );
 
 console.log( '\n' + passed + ' passed, ' + failed + ' failed' );
