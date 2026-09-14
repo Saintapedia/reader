@@ -686,6 +686,12 @@
 				if ( window.console && console.warn ) {
 					console.warn( 'PageReader failed', e );
 				}
+				// cancel() first, same as every other error-recovery path
+				// above: speakSentences() can throw after already having
+				// speak()'d one or more sentences (e.g. a stale voice object),
+				// and stopSpeaking() alone only drops the JS-side reference --
+				// it does not stop whatever the browser already has queued.
+				window.speechSynthesis.cancel();
 				stopSpeaking();
 			}
 		} );

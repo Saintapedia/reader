@@ -1047,6 +1047,35 @@ test( 'a synchronous mid-queue onerror stops queuing the remaining sentences ent
 	);
 } );
 
+test( 'speak() throwing mid-queue is caught and still cancels whatever was already queued', function () {
+	// Regression test: the outer catch around the whole click handler must
+	// call speechSynthesis.cancel() before stopSpeaking(), same as every
+	// other error-recovery path here -- stopSpeaking() alone only drops
+	// the JS-side queuedUtterances reference, it does not stop the browser
+	// from playing whatever it was already handed via speak().
+	const { window, speechState, speechSynthesis } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
+	);
+	const originalSpeak = speechSynthesis.speak;
+	let speakCalls = 0;
+	speechSynthesis.speak = function ( utterance ) {
+		speakCalls++;
+		if ( speakCalls === 2 ) {
+			throw new Error( 'simulated speak() failure, e.g. a stale voice object' );
+		}
+		originalSpeak( utterance );
+	};
+
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	// cancelCount is 2, not 1: the click handler already calls cancel()
+	// once unconditionally before building the queue; this asserts the
+	// catch block's own cancel() call also ran.
+	assert.strictEqual( speechState.cancelCount, 2, 'cancel() must run as part of catching the thrown error' );
+	assert.strictEqual( button.textContent, 'Read this page aloud' );
+} );
+
 test( 'onstart highlights the sentence currently playing, replacing the previous one', function () {
 	const { window, speechState } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
