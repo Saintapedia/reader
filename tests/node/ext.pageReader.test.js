@@ -1051,6 +1051,90 @@ test( 'a sentence failing twice in a row (original + retry) aborts the whole rea
 	assert.strictEqual( button.getAttribute( 'aria-pressed' ), 'false' );
 } );
 
+test( 'each sentence gets its own independent retry -- a later failure is not treated as already-retried', function () {
+	// Regression test: the retry must be tracked per sentence (by its
+	// absolute position in the article), not as a single flag applied to
+	// the whole re-queued tail -- otherwise every sentence after the
+	// first one that ever failed would wrongly lose its own single retry.
+	const { window, speechState, speechSynthesis } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">' +
+			'Sentence one. Sentence two. Sentence three. Sentence four.' +
+			'</div></div>'
+	);
+	const originalSpeak = speechSynthesis.speak;
+	const failedOnce = {};
+	speechSynthesis.speak = function ( utterance ) {
+		originalSpeak( utterance );
+		// Sentence 1 fails once (then succeeds on its retry); sentence 3
+		// -- on its own first-ever attempt, unrelated to sentence 1's
+		// failure -- also fails once (then succeeds on its retry).
+		if ( ( utterance.text === 'Sentence two.' || utterance.text === 'Sentence four.' ) &&
+			!failedOnce[ utterance.text ]
+		) {
+			failedOnce[ utterance.text ] = true;
+			utterance.onerror();
+		}
+	};
+
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.deepStrictEqual(
+		speechState.utterances.map( function ( u ) { return u.text; } ),
+		[
+			'Sentence one.',
+			'Sentence two.', // fails
+			'Sentence two.', // retried, succeeds
+			'Sentence three.',
+			'Sentence four.', // fails on its OWN first attempt
+			'Sentence four.', // must still get its own retry, succeeds
+		]
+	);
+} );
+
+test( "speakWholeArticle (highlighting disabled) also gets a single silent retry before aborting", function () {
+	const { window, speechState, speechSynthesis } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>',
+		{ wgPageReaderHighlightEnabled: false }
+	);
+	const originalSpeak = speechSynthesis.speak;
+	let speakCalls = 0;
+	speechSynthesis.speak = function ( utterance ) {
+		originalSpeak( utterance );
+		speakCalls++;
+		if ( speakCalls === 1 ) {
+			utterance.onerror();
+		}
+	};
+
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances.length, 2, 'one failed attempt plus one successful retry' );
+	assert.strictEqual( button.textContent, 'Stop reading', 'the retry succeeded -- nothing aborted' );
+} );
+
+test( 'speakWholeArticle aborts cleanly (with cancel()) if the retry also fails', function () {
+	const { window, speechState, speechSynthesis } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>',
+		{ wgPageReaderHighlightEnabled: false }
+	);
+	const originalSpeak = speechSynthesis.speak;
+	speechSynthesis.speak = function ( utterance ) {
+		originalSpeak( utterance );
+		utterance.onerror();
+	};
+
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances.length, 2, 'one original attempt plus one retry attempt' );
+	// cancelCount is 3: the click handler's unconditional initial cancel(),
+	// plus one cancel() per onerror firing (original attempt + retry).
+	assert.strictEqual( speechState.cancelCount, 3, 'cancel() must run on the exhausted-retry path too' );
+	assert.strictEqual( button.textContent, 'Read this page aloud' );
+} );
+
 test( 'speak() throwing mid-queue is caught and still cancels whatever was already queued', function () {
 	// Regression test: the outer catch around the whole click handler must
 	// call speechSynthesis.cancel() before stopSpeaking(), same as every

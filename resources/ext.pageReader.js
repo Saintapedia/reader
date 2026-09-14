@@ -563,9 +563,11 @@
 						// Single silent retry: most onerror causes (a stale
 						// voice reference, a transient synthesis hiccup) do
 						// not repeat on a freshly-built utterance for the
-						// same text. Only abort if the retry itself fails.
+						// same text. cancel() runs either way -- stopSpeaking()
+						// alone doesn't stop whatever the browser still
+						// considers queued -- only whether to retry differs.
+						window.speechSynthesis.cancel();
 						if ( !isRetry ) {
-							window.speechSynthesis.cancel();
 							speakWholeArticle( true );
 							return;
 						}
@@ -604,8 +606,17 @@
 				// argument would, so inlining this directly in the for-loop below
 				// would leave every utterance's onstart closing over the SAME
 				// (final) sentence instead of its own.
-				function queueSentence( sentenceList, index, isRetry ) {
+				// retriedIndex: the absolute (whole-article) sentence index
+				// that has already used its single retry, or -1 if none
+				// has yet. Tracked by absolute index rather than a plain
+				// boolean so that re-queuing the tail after sentence N
+				// fails doesn't also mark every *other* sentence in that
+				// tail as already retried -- each sentence gets its own
+				// independent single retry, not just the one that
+				// happened to fail first.
+				function queueSentence( sentenceList, index, offset, retriedIndex ) {
 					var sentence = sentenceList[ index ];
+					var absoluteIndex = offset + index;
 					var utterance = new window.SpeechSynthesisUtterance( sentence.text );
 					applyVoiceSettings( utterance );
 					queuedUtterances.push( utterance );
@@ -665,8 +676,8 @@
 						}
 						supersededSynchronously = true;
 						window.speechSynthesis.cancel();
-						if ( !isRetry ) {
-							speakSentences( sentenceList.slice( index ), true );
+						if ( absoluteIndex !== retriedIndex ) {
+							speakSentences( sentenceList.slice( index ), absoluteIndex, absoluteIndex );
 							return;
 						}
 						stopSpeaking();
@@ -676,10 +687,12 @@
 					return supersededSynchronously;
 				}
 
-				// isRetry: set only when re-queuing after a single automatic
-				// retry (see queueSentence()'s onerror above) -- omitted
-				// (undefined/falsy) on the initial call.
-				function speakSentences( sentenceList, isRetry ) {
+				// offset: absolute (whole-article) index of sentenceList[0],
+				// so each queued sentence's own absolute position can be
+				// computed and compared against retriedIndex. retriedIndex:
+				// see queueSentence() above -- pass -1 on the initial call
+				// (no sentence has used its retry yet).
+				function speakSentences( sentenceList, offset, retriedIndex ) {
 					queuedUtterances = [];
 
 					// A real loop (not Array#forEach, which cannot be stopped
@@ -697,14 +710,14 @@
 						if ( myGeneration !== speechGeneration ) {
 							break;
 						}
-						if ( queueSentence( sentenceList, index, isRetry ) ) {
+						if ( queueSentence( sentenceList, index, offset, retriedIndex ) ) {
 							break;
 						}
 					}
 				}
 
 				if ( sentences.length ) {
-					speakSentences( sentences );
+					speakSentences( sentences, 0, -1 );
 				} else {
 					speakWholeArticle();
 				}
