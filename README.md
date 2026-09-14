@@ -26,21 +26,17 @@ for the full history and rationale).
   working normally — e.g. for a non-Kids page where PageReader is
   enabled but the highlight styling isn't wanted.
 - Content scoping is opt-out by default: an eligible page with no
-  markers, class, or selector match still gets a button that reads the
-  whole content area — nothing to add on an ordinary page. Narrow that
-  scope with a `<!-- readaloud:start -->`/`<!-- readaloud:end -->`
-  comment pair (opt-in to just one part of a busier page), or exclude
-  a stretch from any scoping mode with `<!-- readaloud:skip:start -->`/
-  `<!-- readaloud:skip:end -->` (a banner or nav link, without wrapping
-  the rest of the article). Plain HTML comments, not a template — they
-  render as inert markers in VisualEditor rather than forcing an opaque
-  raw-wikitext block the way the legacy `class="kids-readaloud"` /
-  `{{ReadAloud/start}}`-`{{ReadAloud/end}}` template-pair approach
-  (still supported, see DEPLOY.md) does.
-- The button can be placed anywhere in any article: put
-  `class="kids-readaloud"` (configurable via `$wgPageReaderContentClass`
-  — the default matches existing Saintapedia Kids content) on any
-  wrapper element, and the button is inserted immediately before it.
+  marker, class, or selector match still gets a button that reads the
+  whole content area — nothing to add on an ordinary page. Exclude a
+  stretch (a banner, a nav link) with a `pagereader-readaloud-skip-start`/
+  `-skip-end` marker pair, without wrapping the rest of the article to
+  get there — any number of skip regions, and they may nest. Plain
+  hidden `<span>` elements, not HTML comments (MediaWiki's parser
+  strips literal wikitext comments from rendered output entirely, so
+  they'd never reach a real reader's page at all) and not the legacy
+  `{{ReadAloud/start}}`/`{{ReadAloud/end}}` template pair (still
+  supported, see DEPLOY.md), which breaks VisualEditor's per-paragraph
+  editing for anything wrapped in it.
 - Editor-friendly wikitext templates (not code — see DEPLOY.md) let any
   editor control button placement without touching raw HTML or
   LocalSettings: an optional `{{ReadAloudButton}}` marker overrides
