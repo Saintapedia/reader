@@ -1092,6 +1092,69 @@ test( 'each sentence gets its own independent retry -- a later failure is not tr
 	);
 } );
 
+test( 'a later sentence failing while an earlier one is still playing replays the earlier one, not just the failed one', function () {
+	// Regression test: speechSynthesis.cancel() can't selectively remove
+	// just the failed sentence from the native queue -- it also kills
+	// whatever is currently playing. The retry must resume from whichever
+	// sentence was actually playing (currentlyPlayingIndex), not from the
+	// one that errored, so the interrupted sentence gets replayed instead
+	// of silently dropped.
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">' +
+			'Sentence one. Sentence two. Sentence three. Sentence four.' +
+			'</div></div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	// Sentence 0 ("Sentence one.") starts playing (Chrome may have already
+	// synthesized sentences ahead of it, per the whole point of upfront
+	// queuing) -- then sentence 2 ("Sentence three."), still queued and
+	// not yet started, fails synthesis.
+	speechState.utterances[ 0 ].onstart();
+	speechState.utterances[ 2 ].onerror();
+
+	assert.deepStrictEqual(
+		speechState.utterances.map( function ( u ) { return u.text; } ),
+		[
+			'Sentence one.', 'Sentence two.', 'Sentence three.', 'Sentence four.', // original queue
+			'Sentence one.', 'Sentence two.', 'Sentence three.', 'Sentence four.', // full replay from the interrupted sentence
+		],
+		'the retry must resume from sentence 0 (interrupted mid-play), not from sentence 2 (the one that errored)'
+	);
+} );
+
+test( 'a stale callback from a cancelled/superseded utterance does not abort an in-progress retry', function () {
+	// Regression test: the retry deliberately does not bump
+	// speechGeneration (that would also invalidate the utterances it just
+	// created), so a delayed onend/onerror from an utterance that
+	// speechSynthesis.cancel() already discarded needs a narrower guard
+	// (queuingEpoch) to be told apart from the retry that superseded it.
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
+	);
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	const originalLastUtterance = speechState.utterances[ 1 ];
+	speechState.utterances[ 0 ].onstart();
+	speechState.utterances[ 1 ].onerror(); // triggers a retry, replaying from sentence 0
+
+	assert.strictEqual( speechState.utterances.length, 4, 'original queue plus a full replay' );
+	assert.strictEqual( button.textContent, 'Stop reading', 'the retry is genuinely still in progress' );
+
+	// The ORIGINAL (now-cancelled) last utterance's onend fires late --
+	// simulating a browser that doesn't synchronously suppress a
+	// cancelled utterance's callbacks. This must be ignored, not treated
+	// as "the read finished."
+	originalLastUtterance.onend();
+
+	assert.strictEqual(
+		button.textContent, 'Stop reading',
+		'a stale callback from the superseded (pre-retry) queue must not reset the UI mid-retry'
+	);
+} );
+
 test( "speakWholeArticle (highlighting disabled) also gets a single silent retry before aborting", function () {
 	const { window, speechState, speechSynthesis } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>',
