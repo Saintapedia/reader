@@ -545,7 +545,9 @@
 				// content): identical to this extension's pre-highlighting
 				// behavior -- one utterance for the whole article, no
 				// per-sentence chaining overhead or inter-sentence gaps.
-				function speakWholeArticle() {
+				// isRetry: set only on the single automatic retry below -- omitted
+				// (undefined/falsy) on the initial call.
+				function speakWholeArticle( isRetry ) {
 					var utterance = new window.SpeechSynthesisUtterance( model.text );
 					applyVoiceSettings( utterance );
 					queuedUtterances = [ utterance ];
@@ -555,9 +557,19 @@
 						}
 					};
 					utterance.onerror = function () {
-						if ( myGeneration === speechGeneration ) {
-							stopSpeaking();
+						if ( myGeneration !== speechGeneration ) {
+							return;
 						}
+						// Single silent retry: most onerror causes (a stale
+						// voice reference, a transient synthesis hiccup) do
+						// not repeat on a freshly-built utterance for the
+						// same text. Only abort if the retry itself fails.
+						if ( !isRetry ) {
+							window.speechSynthesis.cancel();
+							speakWholeArticle( true );
+							return;
+						}
+						stopSpeaking();
 					};
 					window.speechSynthesis.speak( utterance );
 				}
@@ -592,7 +604,7 @@
 				// argument would, so inlining this directly in the for-loop below
 				// would leave every utterance's onstart closing over the SAME
 				// (final) sentence instead of its own.
-				function queueSentence( sentenceList, index ) {
+				function queueSentence( sentenceList, index, isRetry ) {
 					var sentence = sentenceList[ index ];
 					var utterance = new window.SpeechSynthesisUtterance( sentence.text );
 					applyVoiceSettings( utterance );
@@ -627,36 +639,67 @@
 						};
 					}
 
-					// Also cancels every other still-queued sentence -- without
-					// this, an error partway through would leave the rest of the
+					// Cancels every other still-queued sentence -- without this,
+					// an error partway through would leave the rest of the
 					// article still queued and playing while the button/UI had
-					// already reset to idle.
+					// already reset to idle. Then a single silent retry: most
+					// onerror causes do not repeat on a freshly-built utterance,
+					// so rebuild the queue starting from this sentence once
+					// before giving up. Retrying just this one utterance via
+					// speak() again would append it to the END of the browser's
+					// queue -- after every later sentence that hasn't started
+					// yet -- so the retry re-queues this sentence *and*
+					// everything after it, preserving order.
+					//
+					// Returns whether this fired synchronously (before speak()
+					// below even returns) so the loop in speakSentences() can
+					// tell it's already been fully handled (including, for a
+					// retry, an entire nested queuing pass for the rest of the
+					// article) and must not continue queuing on top of it --
+					// speechGeneration alone doesn't catch this, since the
+					// retry path deliberately does NOT bump it.
+					var supersededSynchronously = false;
 					utterance.onerror = function () {
-						if ( myGeneration === speechGeneration ) {
-							window.speechSynthesis.cancel();
-							stopSpeaking();
+						if ( myGeneration !== speechGeneration ) {
+							return;
 						}
+						supersededSynchronously = true;
+						window.speechSynthesis.cancel();
+						if ( !isRetry ) {
+							speakSentences( sentenceList.slice( index ), true );
+							return;
+						}
+						stopSpeaking();
 					};
 
 					window.speechSynthesis.speak( utterance );
+					return supersededSynchronously;
 				}
 
-				function speakSentences( sentenceList ) {
+				// isRetry: set only when re-queuing after a single automatic
+				// retry (see queueSentence()'s onerror above) -- omitted
+				// (undefined/falsy) on the initial call.
+				function speakSentences( sentenceList, isRetry ) {
 					queuedUtterances = [];
 
 					// A real loop (not Array#forEach, which cannot be stopped
 					// early) so that a synchronous onerror/onend firing mid-loop
-					// -- which bumps speechGeneration via stopSpeaking() -- stops
-					// this loop from queuing any further sentences. Without this
-					// check, cancel() only clears what's already queued at that
-					// instant; every sentence still to come in this loop would
-					// still get speak()'d and would keep audibly playing even
-					// though the button/UI had already reset to idle.
+					// -- which bumps speechGeneration via stopSpeaking(), or
+					// (for a retry) triggers its own full nested queuing pass
+					// -- stops this loop from queuing any further sentences on
+					// top of that. Without this, cancel() only clears what's
+					// already queued at that instant; every sentence still to
+					// come in this loop would still get speak()'d and would
+					// keep audibly playing (or be queued a second time) even
+					// though the button/UI had already reset to idle, or a
+					// nested retry pass had already re-queued the same tail.
 					for ( var index = 0; index < sentenceList.length; index++ ) {
 						if ( myGeneration !== speechGeneration ) {
 							break;
 						}
-						queueSentence( sentenceList, index );
+						if ( queueSentence( sentenceList, index, isRetry ) ) {
+							break;
+						}
 					}
 				}
 
