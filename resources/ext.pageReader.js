@@ -31,12 +31,65 @@
 		} );
 	}
 
+	// True if `node` lies strictly between `startMarker` and `endMarker` in
+	// document order. Only meaningful when both markers were actually found
+	// (see resolveContentRegion()) -- with no markers, everything is in range.
+	function isWithinMarkers( node, startMarker, endMarker ) {
+		if ( !startMarker || !endMarker ) {
+			return true;
+		}
+		var afterStart = !!( startMarker.compareDocumentPosition( node ) & Node.DOCUMENT_POSITION_FOLLOWING );
+		var beforeEnd = !!( endMarker.compareDocumentPosition( node ) & Node.DOCUMENT_POSITION_PRECEDING );
+		return afterStart && beforeEnd;
+	}
+
+	// <!-- readaloud:skip:start --> / <!-- readaloud:skip:end --> exclude one
+	// specific stretch of a page from being read, the opt-out counterpart to
+	// the opt-in <!-- readaloud:start -->/<!-- readaloud:end --> pair (see
+	// resolveContentRegion()): with no markers on a page at all, the whole
+	// eligible content area is read by default, and this is how an editor
+	// carves out the rare exception -- a navigation link, a banner -- without
+	// having to wrap the entire rest of the article to get there. A page can
+	// have any number of skip regions (a template used many times might each
+	// emit its own pair), so this collects every properly nested pair rather
+	// than just the first.
+	function findSkipCommentRanges( root ) {
+		var walker = document.createTreeWalker( root, NodeFilter.SHOW_COMMENT, null );
+		var ranges = [];
+		var pendingStart = null;
+		var node;
+		while ( ( node = walker.nextNode() ) ) {
+			var text = ( node.nodeValue || '' ).trim();
+			if ( text === 'readaloud:skip:start' ) {
+				pendingStart = node;
+			} else if ( text === 'readaloud:skip:end' && pendingStart ) {
+				ranges.push( { start: pendingStart, end: node } );
+				pendingStart = null;
+			}
+		}
+		return ranges;
+	}
+
+	// True if `node` falls inside any of `skipRanges` (see
+	// findSkipCommentRanges()). A plain some() over isWithinMarkers() --
+	// skip ranges don't need to share a parent with each other or with
+	// whatever contentRoot ended up being, since compareDocumentPosition()
+	// works across the whole document regardless of ancestry.
+	function isInsideAnySkipRange( node, skipRanges ) {
+		for ( var i = 0; i < skipRanges.length; i++ ) {
+			if ( isWithinMarkers( node, skipRanges[ i ].start, skipRanges[ i ].end ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	// Shared by buildSpeechModel() (deciding what text to speak) and
 	// highlightChunk() (deciding what's eligible to highlight) so the two
 	// can never drift out of alignment -- they must skip exactly the same
 	// nodes in exactly the same order for a sentence's recorded character
 	// offsets to still point at the right text in the live DOM.
-	function makeSkipPredicate( contentRoot ) {
+	function makeSkipPredicate( contentRoot, startMarker, endMarker, skipRanges ) {
 		var skipSelectors = validSkipSelectors();
 		var ownControlClasses = [
 			'pagereader-button',
@@ -45,6 +98,12 @@
 			'pagereader-pause-button'
 		];
 		return function ( textNode ) {
+			if ( !isWithinMarkers( textNode, startMarker, endMarker ) ) {
+				return true;
+			}
+			if ( isInsideAnySkipRange( textNode, skipRanges ) ) {
+				return true;
+			}
 			var el = textNode.parentElement;
 			while ( el ) {
 				if ( el.classList ) {
@@ -75,8 +134,8 @@
 	// Walks contentRoot's live text nodes in document order (not a clone) --
 	// that's what makes highlighting possible later, since highlightChunk()
 	// needs the same live nodes a sentence's offsets point back into.
-	function buildSpeechModel( contentRoot ) {
-		var skipPredicate = makeSkipPredicate( contentRoot );
+	function buildSpeechModel( contentRoot, startMarker, endMarker, skipRanges ) {
+		var skipPredicate = makeSkipPredicate( contentRoot, startMarker, endMarker, skipRanges );
 		var walker = document.createTreeWalker( contentRoot, NodeFilter.SHOW_TEXT, null );
 		var text = '';
 		var node;
@@ -424,7 +483,7 @@
 		return findFollowingSibling( button, 'pagereader-pause-button' );
 	}
 
-	function bindButton( button, contentRoot ) {
+	function bindButton( button, contentRoot, startMarker, endMarker, skipRanges ) {
 		if ( !button || button.getAttribute( 'data-pagereader-bound' ) === '1' ) {
 			return;
 		}
@@ -504,7 +563,7 @@
 				// invalid selector is validated out up front, but this stays
 				// guarded regardless since it also builds the DOM walk
 				// highlighting reads.
-				var model = buildSpeechModel( contentRoot );
+				var model = buildSpeechModel( contentRoot, startMarker, endMarker, skipRanges );
 				var sentences = highlightEnabled ? splitIntoSentences( model.text ) : [];
 
 				function applyVoiceSettings( utterance ) {
@@ -687,11 +746,67 @@
 		}
 	}
 
-	function findContentRoot( root ) {
+	// <!-- readaloud:start --> / <!-- readaloud:end --> let an editor mark a
+	// read-aloud region as plain wikitext comments instead of wrapping it in
+	// an element. This matters because the previous approach for the same
+	// job -- a {{ReadAloud/start}}/{{ReadAloud/end}} template pair, each
+	// emitting one half of an unbalanced <div> -- forced Parsoid to treat
+	// everything between the two transclusions (every heading and paragraph
+	// of the story, not just the templates themselves) as a single opaque
+	// "template content" block in VisualEditor: no inline text editing
+	// anywhere inside it, only a raw-wikitext dialog for the whole thing.
+	// A lone HTML comment carries no such requirement -- each is parsed as
+	// its own, independently meaningless, node, so VE shows it as a small
+	// inert marker in the text flow and leaves everything around it exactly
+	// as normally editable as it would be with no marker at all.
+	function findReadAloudComments( root ) {
+		var walker = document.createTreeWalker( root, NodeFilter.SHOW_COMMENT, null );
+		var start = null;
+		var end = null;
+		var node;
+		while ( ( node = walker.nextNode() ) ) {
+			var text = ( node.nodeValue || '' ).trim();
+			if ( !start && text === 'readaloud:start' ) {
+				start = node;
+			} else if ( start && !end && text === 'readaloud:end' ) {
+				end = node;
+			}
+		}
+		// Requiring a shared parentNode keeps isWithinMarkers()'s
+		// compareDocumentPosition() check simple and rules out a malformed
+		// or cross-nested pair rather than silently reading past one end.
+		if ( start && end && start.parentNode === end.parentNode ) {
+			return { start: start, end: end, parent: start.parentNode };
+		}
+		return null;
+	}
+
+	// Resolves what to read, most specific marker first:
+	//
+	//   1. A <!-- readaloud:start/end --> comment pair -- an explicit,
+	//      opt-IN narrow scope (e.g. Portal:Kids's own blurb amid a busy
+	//      page with lots of other content that shouldn't be read).
+	//   2. The pre-existing contentClass/contentSelector config, unchanged,
+	//      so any page still using the kids-readaloud class (old-format
+	//      Kids: articles not yet migrated) keeps working exactly as before.
+	//   3. Opt-OUT default: no marker of any kind means read the whole
+	//      eligible content area (root itself -- this page already passed
+	//      server-side namespace/title eligibility to get PageReader loaded
+	//      at all, so there's nothing further to check here). An editor
+	//      excludes the rare exception -- a banner, a nav link -- with a
+	//      <!-- readaloud:skip:start/end --> pair (see
+	//      findSkipCommentRanges()) rather than the whole article needing a
+	//      wrapper just to get to the one thing that should stay silent.
+	function resolveContentRegion( root ) {
+		var comments = findReadAloudComments( root );
+		if ( comments ) {
+			return { root: comments.parent, startMarker: comments.start, endMarker: comments.end };
+		}
+
 		var contentClass = mw.config.get( 'wgPageReaderContentClass' );
 		if ( contentClass ) {
 			if ( root.classList && root.classList.contains( contentClass ) ) {
-				return root;
+				return { root: root, startMarker: null, endMarker: null };
 			}
 			if ( root.querySelector ) {
 				// CSS.escape guards against a contentClass value (settable via the
@@ -700,14 +815,32 @@
 				var escaped = ( window.CSS && CSS.escape ) ? CSS.escape( contentClass ) : contentClass;
 				var marked = root.querySelector( '.' + escaped );
 				if ( marked ) {
-					return marked;
+					return { root: marked, startMarker: null, endMarker: null };
 				}
 			}
 		}
 
 		var fallbackSelector = mw.config.get( 'wgPageReaderContentSelector' );
 		if ( fallbackSelector && root.querySelector ) {
-			return root.querySelector( fallbackSelector );
+			var selected = root.querySelector( fallbackSelector );
+			if ( selected ) {
+				return { root: selected, startMarker: null, endMarker: null };
+			}
+		}
+
+		// Opt-out default. root.nodeType === 1 (an Element) covers the normal
+		// case -- the wikipage.content hook's own $content argument, almost
+		// always #mw-content-text or a narrower re-render fragment. root can
+		// only be the whole `document` (nodeType 9) via this file's own
+		// DOMContentLoaded fallback for an environment with no mw.hook, which
+		// never happens on a real MediaWiki page load; document.body is a
+		// reasonable next-best root there, still well short of chrome like
+		// the sidebar or search box.
+		if ( root && root.nodeType === 1 ) {
+			return { root: root, startMarker: null, endMarker: null };
+		}
+		if ( root === document && document.body ) {
+			return { root: document.body, startMarker: null, endMarker: null };
 		}
 
 		return null;
@@ -830,8 +963,8 @@
 				}
 			}
 
-			var content = findContentRoot( root );
-			if ( !content || !content.parentNode ) {
+			var region = resolveContentRegion( root );
+			if ( !region || !region.root || !region.root.parentNode ) {
 				return;
 			}
 
@@ -841,9 +974,14 @@
 
 			var placement = mw.config.get( 'wgPageReaderButtonPlacement' ) || 'before-content';
 			var anchor = findButtonAnchor();
-			var button = findExistingButton( content, placement, anchor ) || insertButton( content, placement, anchor );
+			var button = findExistingButton( region.root, placement, anchor ) || insertButton( region.root, placement, anchor );
 
-			bindButton( button, content );
+			// Computed from root (not region.root) regardless of which branch
+			// resolveContentRegion() took, so a <!-- readaloud:skip --> pair
+			// works the same way under every scoping mode, not just the
+			// opt-out default.
+			var skipRanges = findSkipCommentRanges( root );
+			bindButton( button, region.root, region.startMarker, region.endMarker, skipRanges );
 		} catch ( e ) {
 			if ( window.console && console.warn ) {
 				console.warn( 'PageReader failed', e );

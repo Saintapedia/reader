@@ -285,9 +285,163 @@ test( 'an invalid skip selector is skipped, not fatal -- speech still works', fu
 	assert.ok( consoleWarnings.some( function ( w ) { return w.indexOf( 'invalid skip selector' ) !== -1; } ) );
 } );
 
-test( 'no content root found: no button inserted, no error thrown', function () {
-	const { window } = buildDom( '<div id="mw-content-text"><p>Nothing marked here.</p></div>' );
-	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 0 );
+test( 'opt-out default: a page with no marker, class, or selector match still gets a button and reads everything', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><p>Nothing marked here at all.</p></div>'
+	);
+	const button = window.document.querySelector( '.pagereader-button' );
+	assert.ok( button, 'an unmarked page should still be readable end to end, not silently skipped' );
+
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.ok( speechState.spoken[ 0 ].includes( 'Nothing marked here at all.' ) );
+} );
+
+test( 'readaloud:skip excludes just its own region under the opt-out default, everything else is still read', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text">' +
+			'<p>Read this part.</p>' +
+			'<!-- readaloud:skip:start -->' +
+			'<p>Skip this part.</p>' +
+			'<!-- readaloud:skip:end -->' +
+			'<p>Read this too.</p>' +
+		'</div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.ok( speechState.spoken[ 0 ].includes( 'Read this part.' ) );
+	assert.ok( speechState.spoken[ 0 ].includes( 'Read this too.' ) );
+	assert.ok( !speechState.spoken[ 0 ].includes( 'Skip this part' ) );
+} );
+
+test( 'readaloud:skip works inside an opt-in readaloud:start/end region too, not just the opt-out default', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text">' +
+			'<!-- readaloud:start -->' +
+			'<p>Read this part.</p>' +
+			'<!-- readaloud:skip:start -->' +
+			'<p>Skip this part.</p>' +
+			'<!-- readaloud:skip:end -->' +
+			'<!-- readaloud:end -->' +
+		'</div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.ok( speechState.spoken[ 0 ].includes( 'Read this part.' ) );
+	assert.ok( !speechState.spoken[ 0 ].includes( 'Skip this part' ) );
+} );
+
+test( 'multiple readaloud:skip regions on the same page are all excluded', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text">' +
+			'<!-- readaloud:skip:start --><p>Skip one.</p><!-- readaloud:skip:end -->' +
+			'<p>Read this.</p>' +
+			'<!-- readaloud:skip:start --><p>Skip two.</p><!-- readaloud:skip:end -->' +
+		'</div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.strictEqual( speechState.spoken[ 0 ].trim(), 'Read this.' );
+} );
+
+test( 'readaloud comment markers scope speech to only what is between them', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text">' +
+			'<p>Banner text before the story.</p>' +
+			'<!-- readaloud:start -->' +
+			'<h2>Chapter One</h2>' +
+			'<p>Story text.</p>' +
+			'<!-- readaloud:end -->' +
+			'<p>Grown-up link after the story.</p>' +
+		'</div>'
+	);
+	const button = window.document.querySelector( '.pagereader-button' );
+	assert.ok( button, 'button should be inserted from the comment-marked region' );
+
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.ok( !speechState.spoken[ 0 ].includes( 'Banner text' ), 'text before the start marker must not be read' );
+	assert.ok( !speechState.spoken[ 0 ].includes( 'Grown-up link' ), 'text after the end marker must not be read' );
+	assert.ok( speechState.spoken[ 0 ].includes( 'Chapter One' ) );
+	assert.ok( speechState.spoken[ 0 ].includes( 'Story text.' ) );
+} );
+
+test( 'readaloud comment markers take priority over a kids-readaloud class on the same page', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text">' +
+			'<div class="kids-readaloud">Old-format text that should be ignored.</div>' +
+			'<!-- readaloud:start -->' +
+			'<p>New-format text.</p>' +
+			'<!-- readaloud:end -->' +
+		'</div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.ok( speechState.spoken[ 0 ].includes( 'New-format text.' ) );
+	assert.ok( !speechState.spoken[ 0 ].includes( 'Old-format text' ) );
+} );
+
+test( 'an unpaired readaloud:start comment (no matching end) falls back to contentClass, not a crash', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text">' +
+			'<!-- readaloud:start -->' +
+			'<div class="kids-readaloud">Fallback text.</div>' +
+		'</div>'
+	);
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
+} );
+
+test( 'readaloud comment markers: re-firing wikipage.content does not duplicate the button', function () {
+	const { window, refire } = buildDom(
+		'<div id="mw-content-text"><!-- readaloud:start --><p>Text.</p><!-- readaloud:end --></div>'
+	);
+	refire();
+	refire();
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
+} );
+
+test( 'readaloud comment markers: skip selectors still apply to content inside the marked region', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text">' +
+			'<!-- readaloud:start -->' +
+			'<span class="infobox">SKIP ME</span><p>Read this.</p>' +
+			'<!-- readaloud:end -->' +
+		'</div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.ok( !speechState.spoken[ 0 ].includes( 'SKIP ME' ) );
+	assert.ok( speechState.spoken[ 0 ].includes( 'Read this.' ) );
+} );
+
+test( 'readaloud comment markers: sentence highlighting only highlights nodes inside the marked region', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text">' +
+			'<p>Outside sentence one. Outside sentence two.</p>' +
+			'<!-- readaloud:start -->' +
+			'<p>Inside sentence one. Inside sentence two.</p>' +
+			'<!-- readaloud:end -->' +
+		'</div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	speechState.utterances[ 0 ].onstart();
+
+	const marks = window.document.querySelectorAll( 'mark.pagereader-highlight' );
+	assert.ok( marks.length > 0, 'the first inside sentence should be highlighted' );
+	marks.forEach( function ( mark ) {
+		assert.ok( !mark.textContent.includes( 'Outside' ), 'a mark must never wrap text from outside the marked region' );
+	} );
 } );
 
 test( 'contentSelector fallback is used when no marker class is present', function () {
