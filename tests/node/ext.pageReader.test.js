@@ -1024,6 +1024,69 @@ test( 'clicking Stop mid-sentence: a stale onend from the cancelled queue does n
 	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 0 );
 } );
 
+test( 'an error partway through a multi-sentence queue cancels the rest and resets to idle', function () {
+	// Regression for the onerror handler added alongside upfront queuing:
+	// every queued utterance carries an onerror, not just the last one, so
+	// a mid-article synthesis failure must flush the remaining queue
+	// instead of leaving it playing under a button that already reset.
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">' +
+			'One sentence here. A second sentence follows. A third one closes it out.' +
+			'</div></div>'
+	);
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.strictEqual( speechState.utterances.length, 3, 'all three sentences are queued up front' );
+
+	speechState.utterances[ 0 ].onstart();
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 1 );
+	const cancelCountBeforeError = speechState.cancelCount;
+
+	// Simulate the middle utterance's synthesis failing mid-article.
+	speechState.utterances[ 1 ].onerror();
+
+	assert.strictEqual(
+		speechState.cancelCount, cancelCountBeforeError + 1,
+		'the rest of the queue must be cancelled on error'
+	);
+	assert.strictEqual( button.textContent, 'Read this page aloud', 'resets to idle rather than staying stuck' );
+	assert.strictEqual( button.getAttribute( 'aria-pressed' ), 'false' );
+	assert.strictEqual(
+		window.document.querySelectorAll( '.pagereader-highlight' ).length, 0,
+		'highlight from the interrupted sentence must be cleared'
+	);
+} );
+
+test( 'a stale onerror from a middle queued sentence after Stop does not reactivate it', function () {
+	// Companion to the stale-onend regression above, but for a non-last
+	// index and the onerror handler specifically -- cancel() can still
+	// cause several already-queued utterances to fire onerror/onend
+	// asynchronously after the user has already clicked Stop, and every
+	// one of them (not just the last) must be a no-op once the generation
+	// guard has moved on.
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">' +
+			'One sentence here. A second sentence follows. A third one closes it out.' +
+			'</div></div>'
+	);
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	const middleUtterance = speechState.utterances[ 1 ];
+
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	const cancelCountAfterStop = speechState.cancelCount;
+	assert.strictEqual( button.textContent, 'Read this page aloud', 'stopped back to idle' );
+
+	// Simulate the cancelled queue's middle utterance firing onerror late.
+	middleUtterance.onerror();
+
+	assert.strictEqual(
+		speechState.cancelCount, cancelCountAfterStop,
+		'a stale onerror from the cancelled queue must not trigger a second cancel'
+	);
+	assert.strictEqual( button.textContent, 'Read this page aloud', 'stays idle after the stale onerror' );
+} );
+
 test( 'highlight persists across pause and is cleared when the queue naturally finishes', function () {
 	const { window, speechState } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
