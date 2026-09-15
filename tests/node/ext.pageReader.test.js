@@ -374,6 +374,25 @@ test( 'Firefox on Windows is unaffected -- the workaround is scoped to Linux, no
 	assert.strictEqual( speechState.utterances[ 0 ].rate, 0.9 );
 } );
 
+test( 'Firefox on Linux gets the browser default pitch/rate on the whole-article (highlighting-disabled) path too', function () {
+	// The Firefox/Linux override is applied via a single applyVoiceSettings()
+	// closure shared by both the per-sentence highlighted path and the
+	// whole-article single-utterance path (used when highlighting is off) --
+	// this covers the latter, since all the other Firefox tests above only
+	// exercise the per-sentence path.
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">One sentence. Another one.</div></div>',
+		{ wgPageReaderVoicePitch: 1.3, wgPageReaderVoiceRate: 0.9, wgPageReaderHighlightEnabled: false },
+		null, null, null, null, FIREFOX_LINUX_USER_AGENT
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances.length, 1, 'highlighting disabled means a single whole-article utterance' );
+	assert.strictEqual( speechState.utterances[ 0 ].pitch, 1, 'Firefox/Linux must ignore the configured pitch tuning here too' );
+	assert.strictEqual( speechState.utterances[ 0 ].rate, 1, 'Firefox/Linux must ignore the configured rate tuning here too' );
+} );
+
 test( 'a non-Firefox browser is unaffected by the Firefox pitch/rate workaround', function () {
 	const { window, speechState } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
