@@ -812,16 +812,21 @@
 		// wikipage.content is a generic, shared MediaWiki hook -- other
 		// gadgets/extensions (reference-popup previews, live-preview
 		// widgets, comment threads) fire it too, for their own unrelated
-		// fragments, on the very same eligible page. The class/selector
-		// branches above are both explicit opt-in signals, safe regardless
-		// of which fragment fires the hook; the opt-out default has no such
-		// signal, so it additionally requires root to actually be the
-		// page's own content area (or a descendant of it) -- not just any
-		// Element -- before reading it by default.
+		// fragments, on the very same eligible page, and MediaWiki core
+		// itself can replay the hook for just a narrower re-rendered
+		// fragment rather than the whole content area again. The class/
+		// selector branches above are both explicit opt-in signals, safe
+		// regardless of which fragment fires the hook; the opt-out default
+		// has no such signal, so it requires root to actually BE the
+		// page's own content area -- not merely somewhere inside it -- or
+		// any such narrower fragment would itself be treated as "the whole
+		// content to read", inserting a second button scoped to just that
+		// fragment (findExistingButton() looks for the existing button
+		// relative to the real content area, not this unrelated fragment,
+		// so it never finds it).
 		var contentArea = document.getElementById( 'mw-content-text' );
-		var withinContentArea = !contentArea || root === contentArea ||
-			( contentArea.contains && contentArea.contains( root ) );
-		if ( root && root.nodeType === 1 && withinContentArea ) {
+		var isContentArea = !contentArea || root === contentArea;
+		if ( root && root.nodeType === 1 && isContentArea ) {
 			return root;
 		}
 		if ( root === document && document.body ) {

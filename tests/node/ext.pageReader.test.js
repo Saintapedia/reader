@@ -321,6 +321,32 @@ test( 'a wikipage.content fire for an unrelated fragment outside #mw-content-tex
 	);
 } );
 
+test( 'a wikipage.content re-fire scoped to a narrower fragment inside #mw-content-text does not duplicate the button', function () {
+	// Regression found by external review: the opt-out default's guard
+	// only checked that root was somewhere inside #mw-content-text
+	// (contentArea.contains(root)), not that root WAS #mw-content-text --
+	// so a later wikipage.content re-fire scoped to an arbitrary
+	// descendant (a live-preview widget's own partial re-render, a
+	// gadget's fragment update, MediaWiki core's own T360592-style replay)
+	// was itself treated as "the whole content to read". Since that
+	// narrower root sits in a different place in the DOM than
+	// #mw-content-text, findExistingButton() can't find the button
+	// already inserted next to the real content area and inserts a
+	// second one scoped to just that narrow fragment.
+	const { window, refire } = buildDom(
+		'<div id="mw-content-text"><p>Real article content.</p>' +
+			'<div id="inner-widget"><p>An unrelated inner fragment re-render.</p></div></div>'
+	);
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
+
+	refire( window.document.getElementById( 'inner-widget' ) );
+
+	assert.strictEqual(
+		window.document.querySelectorAll( '.pagereader-button' ).length, 1,
+		'a re-fire scoped to a fragment inside #mw-content-text must not insert a second button'
+	);
+} );
+
 test( 'the opt-out default does not read sysop/editor UI chrome living inside the content area', function () {
 	// Found live: an unmarked page reading the whole content area by
 	// default also picks up MediaWiki's own UI elements that happen to
