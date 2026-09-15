@@ -285,9 +285,177 @@ test( 'an invalid skip selector is skipped, not fatal -- speech still works', fu
 	assert.ok( consoleWarnings.some( function ( w ) { return w.indexOf( 'invalid skip selector' ) !== -1; } ) );
 } );
 
-test( 'no content root found: no button inserted, no error thrown', function () {
-	const { window } = buildDom( '<div id="mw-content-text"><p>Nothing marked here.</p></div>' );
-	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 0 );
+test( 'opt-out default: a page with no marker, class, or selector match still gets a button and reads everything', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><p>Nothing marked here at all.</p></div>'
+	);
+	const button = window.document.querySelector( '.pagereader-button' );
+	assert.ok( button, 'an unmarked page should still be readable end to end, not silently skipped' );
+
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.ok( speechState.spoken[ 0 ].includes( 'Nothing marked here at all.' ) );
+} );
+
+test( 'a wikipage.content fire for an unrelated fragment outside #mw-content-text does not get its own button', function () {
+	// Regression test: wikipage.content is a generic, shared MediaWiki
+	// hook -- other gadgets/extensions (reference-popup previews, live-
+	// preview widgets, comment threads) fire it too, for their own
+	// unrelated fragments, on the very same eligible page. The opt-out
+	// default must not treat every such fragment as readable content
+	// just because it happens to be an Element.
+	const { window, refire } = buildDom(
+		'<div id="mw-content-text"><p>Real article content.</p></div>' +
+			'<div id="popup-preview"><p>Unrelated reference popup text.</p></div>'
+	);
+	assert.strictEqual(
+		window.document.querySelectorAll( '.pagereader-button' ).length, 1,
+		'only one button after the initial load'
+	);
+
+	refire( window.document.getElementById( 'popup-preview' ) );
+
+	assert.strictEqual(
+		window.document.querySelectorAll( '.pagereader-button' ).length, 1,
+		'the unrelated popup-preview fragment must not get its own button'
+	);
+} );
+
+test( 'a wikipage.content re-fire scoped to a narrower fragment inside #mw-content-text does not duplicate the button', function () {
+	// Regression found by external review: the opt-out default's guard
+	// only checked that root was somewhere inside #mw-content-text
+	// (contentArea.contains(root)), not that root WAS #mw-content-text --
+	// so a later wikipage.content re-fire scoped to an arbitrary
+	// descendant (a live-preview widget's own partial re-render, a
+	// gadget's fragment update, MediaWiki core's own T360592-style replay)
+	// was itself treated as "the whole content to read". Since that
+	// narrower root sits in a different place in the DOM than
+	// #mw-content-text, findExistingButton() can't find the button
+	// already inserted next to the real content area and inserts a
+	// second one scoped to just that narrow fragment.
+	const { window, refire } = buildDom(
+		'<div id="mw-content-text"><p>Real article content.</p>' +
+			'<div id="inner-widget"><p>An unrelated inner fragment re-render.</p></div></div>'
+	);
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-button' ).length, 1 );
+
+	refire( window.document.getElementById( 'inner-widget' ) );
+
+	assert.strictEqual(
+		window.document.querySelectorAll( '.pagereader-button' ).length, 1,
+		'a re-fire scoped to a fragment inside #mw-content-text must not insert a second button'
+	);
+} );
+
+test( 'the opt-out default does not read sysop/editor UI chrome living inside the content area', function () {
+	// Found live: an unmarked page reading the whole content area by
+	// default also picks up MediaWiki's own UI elements that happen to
+	// live inside #mw-content-text (e.g. the patrol link on a new/
+	// unpatrolled page) -- previously invisible to PageReader entirely,
+	// since a page with no explicit content marker got no button at all.
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text">' +
+			'<p>Real article content.</p>' +
+			'<div class="patrollink">Mark this page as patrolled</div>' +
+		'</div>',
+		{ wgPageReaderSkipSelectors: [ '.infobox', '.patrollink' ] }
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.ok( speechState.spoken[ 0 ].includes( 'Real article content.' ) );
+	assert.ok( !speechState.spoken[ 0 ].includes( 'patrolled' ) );
+} );
+
+// Marker elements, not HTML comments -- MediaWiki's parser strips literal
+// wikitext comments from rendered output entirely, so a comment-based
+// marker would never actually reach a real page's DOM (confirmed live).
+// A hidden <span>, like {{ReadAloudButton}}'s own marker, survives.
+const SKIP_START = '<span class="pagereader-readaloud-skip-start" style="display:none"></span>';
+const SKIP_END = '<span class="pagereader-readaloud-skip-end" style="display:none"></span>';
+
+test( 'a pagereader-readaloud-skip region is excluded under the opt-out default, everything else is still read', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text">' +
+			'<p>Read this part.</p>' +
+			SKIP_START +
+			'<p>Skip this part.</p>' +
+			SKIP_END +
+			'<p>Read this too.</p>' +
+		'</div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.ok( speechState.spoken[ 0 ].includes( 'Read this part.' ) );
+	assert.ok( speechState.spoken[ 0 ].includes( 'Read this too.' ) );
+	assert.ok( !speechState.spoken[ 0 ].includes( 'Skip this part' ) );
+} );
+
+test( 'multiple pagereader-readaloud-skip regions on the same page are all excluded', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text">' +
+			SKIP_START + '<p>Skip one.</p>' + SKIP_END +
+			'<p>Read this.</p>' +
+			SKIP_START + '<p>Skip two.</p>' + SKIP_END +
+		'</div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.strictEqual( speechState.spoken[ 0 ].trim(), 'Read this.' );
+} );
+
+test( 'a skip region nested inside another silences the whole outer region', function () {
+	// Regression test: a naive single-pending-start parser lets a second
+	// skip-start (before the first pair's matching skip-end) silently
+	// overwrite the first, so only the inner pair actually gets excluded
+	// -- leaking the outer region's own text into speech. Depth-tracking
+	// must collapse the whole nested structure into one excluded range.
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text">' +
+			SKIP_START +
+			'<p>Outer A.</p>' +
+			SKIP_START +
+			'<p>Inner B.</p>' +
+			SKIP_END +
+			'<p>Outer C.</p>' +
+			SKIP_END +
+			'<p>Normal text.</p>' +
+		'</div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.ok( !speechState.spoken[ 0 ].includes( 'Outer A' ) );
+	assert.ok( !speechState.spoken[ 0 ].includes( 'Inner B' ) );
+	assert.ok( !speechState.spoken[ 0 ].includes( 'Outer C' ) );
+	assert.ok( speechState.spoken[ 0 ].includes( 'Normal text.' ) );
+} );
+
+test( 'sentence highlighting never highlights nodes inside a pagereader-readaloud-skip region', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text">' +
+			'<p>First sentence.</p>' +
+			SKIP_START +
+			'<p>Skipped sentence.</p>' +
+			SKIP_END +
+			'<p>Last sentence.</p>' +
+		'</div>'
+	);
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	speechState.utterances[ 0 ].onstart();
+
+	const marks = window.document.querySelectorAll( 'mark.pagereader-highlight' );
+	assert.ok( marks.length > 0 );
+	marks.forEach( function ( mark ) {
+		assert.ok( !mark.textContent.includes( 'Skipped' ), 'a mark must never wrap text from inside a skip region' );
+	} );
 } );
 
 test( 'contentSelector fallback is used when no marker class is present', function () {

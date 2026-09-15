@@ -25,16 +25,22 @@ for the full history and rationale).
   read-along sentence highlighting while keeping the button and speech
   working normally — e.g. for a non-Kids page where PageReader is
   enabled but the highlight styling isn't wanted.
-- The button can be placed anywhere in any article: put
-  `class="kids-readaloud"` (configurable via `$wgPageReaderContentClass`
-  — the default matches existing Saintapedia Kids content) on any
-  wrapper element, and the button is inserted immediately before it.
+- Content scoping is opt-out by default: an eligible page with no
+  marker, class, or selector match still gets a button that reads the
+  whole content area — nothing to add on an ordinary page. Exclude a
+  stretch (a banner, a nav link) with a `pagereader-readaloud-skip-start`/
+  `-skip-end` marker pair, without wrapping the rest of the article to
+  get there — any number of skip regions, and they may nest. Plain
+  hidden `<span>` elements, not HTML comments (MediaWiki's parser
+  strips literal wikitext comments from rendered output entirely, so
+  they'd never reach a real reader's page at all) and not the legacy
+  `{{ReadAloud/start}}`/`{{ReadAloud/end}}` template pair (still
+  supported, see DEPLOY.md), which breaks VisualEditor's per-paragraph
+  editing for anything wrapped in it.
 - Editor-friendly wikitext templates (not code — see DEPLOY.md) let any
-  editor mark read-aloud content and control button placement without
-  touching raw HTML or LocalSettings: a `{{ReadAloud/start}}` /
-  `{{ReadAloud/end}}` pair marks the content boundary anywhere on any
-  page, and an optional `{{ReadAloudButton}}` marker overrides where
-  the button itself appears on that page, taking priority over the
+  editor control button placement without touching raw HTML or
+  LocalSettings: an optional `{{ReadAloudButton}}` marker overrides
+  where the button itself appears on a page, taking priority over the
   site-wide `$wgPageReaderButtonPlacement` setting.
 - Speech pitch/rate default to a brighter, gentler pace than a
   browser's flat default TTS voice (`$wgPageReaderVoicePitch` /

@@ -84,9 +84,9 @@
 		"PageReaderSkipSelectors": {
 			"value": [
 				".infobox", ".navbox", ".toc", ".thumb", ".reflist",
-				".mw-editsection", ".printfooter", ".catlinks"
+				".mw-editsection", ".printfooter", ".catlinks", ".patrollink"
 			],
-			"description": "Elements stripped from a clone of the content root before reading textContent."
+			"description": "Elements stripped from a clone of the content root before reading textContent. Includes sysop/editor UI (like the patrol link) that lives inside the content area and was only implicitly excluded before the opt-out content-scoping default -- a page with no explicit content marker previously got no button at all, so this chrome was never actually read."
 		},
 		"PageReaderButtonPlacement": {
 			"value": "before-content",

@@ -96,6 +96,36 @@ read-along sentence highlighting — useful for a page where PageReader
 is enabled outside the Kids namespace and the highlight styling isn't
 wanted.
 
+## Content scoping: what gets read
+
+By default (opt-out), PageReader reads the **whole eligible content
+area** — no markup needed on an ordinary page at all, since the page
+already passed server-side namespace/title eligibility to load the
+module in the first place. Two ways to narrow that scope:
+
+1. **`$wgPageReaderContentClass`/`$wgPageReaderContentSelector`**
+   (unchanged) — still works exactly as documented above, for any page
+   using the `kids-readaloud` class (or a configured fallback selector)
+   instead of the opt-out default.
+2. **A `pagereader-readaloud-skip-start`/`pagereader-readaloud-skip-end`
+   marker pair** — excludes one stretch from being read, under *every*
+   scoping mode above (including the opt-out default) — for carving a
+   banner or a "see the full article" link out of an otherwise-fine
+   page without needing to wrap the rest of the article just to get to
+   the one thing that should stay silent. A page can have any number of
+   skip regions, and they may nest. Plain hidden `<span>` elements, not
+   HTML comments: MediaWiki's parser strips literal wikitext comments
+   (`<!-- ... -->`) from the rendered output entirely — confirmed
+   against a live page render, they never reach the browser's DOM at
+   all — so a comment-based marker would silently do nothing for every
+   real reader. A single self-closing `<span>` survives normally, the
+   same way `{{ReadAloudButton}}`'s own marker already does:
+   ```html
+   <span class="pagereader-readaloud-skip-start" style="display:none"></span>
+   Text to exclude from the read-aloud.
+   <span class="pagereader-readaloud-skip-end" style="display:none"></span>
+   ```
+
 ## Editor-friendly templates (optional, on-wiki content, not code)
 
 Editors can mark read-aloud content and control button placement with
@@ -104,10 +134,23 @@ not part of this repo, and need to be created once per wiki (the bot
 account cannot create wiki content pages any more than it can edit
 `MediaWiki:Common.js`/`Common.css` — see "After verification" below).
 
+**`Template:ReadAloudSkip`** (content:
+`<span class="pagereader-readaloud-skip-start" style="display:none"></span>`)
+and **`Template:ReadAloudSkipEnd`** (content:
+`<span class="pagereader-readaloud-skip-end" style="display:none"></span>`)
+let an editor write `{{ReadAloudSkip}}...{{ReadAloudSkipEnd}}` around a
+stretch to exclude, instead of the raw marker spans above.
+
 **`Template:ReadAloud/start`** (content: `<div class="kids-readaloud">`)
 and **`Template:ReadAloud/end`** (content: `</div>`) — a pair rather
 than a single parameterized template, so wikitext inside (links,
-formatting) never needs pipe-escaping:
+formatting) never needs pipe-escaping. **Legacy** — prefer the opt-out
+default above (no markup at all) for any new content; this template
+pair still works for pages that already use it, but breaks
+VisualEditor's per-paragraph editing (each transclusion emits one half
+of an unbalanced `<div>`, forcing Parsoid to treat everything between
+them as one opaque "template content" block — confirmed on production
+`Kids:Saint Lucy`) for anything wrapped in it:
 ```
 {{ReadAloud/start}}
 Some story text here, with [[links]] and '''formatting''' working normally.
@@ -132,12 +175,15 @@ by writing `{{ReadAloudNoHighlight}}` instead of the raw magic word.
 |-------|----------|
 | Load a `Kids:` page | Button appears once, toggles label/class/`aria-pressed` |
 | Load `Portal:Kids` | Button appears (the page itself carries the `kids-readaloud` marker) |
-| Load a `Portal:Kids/` subpage generated via a path-page template | Module requested (`ext.pageReader` in `RLPAGEMODULES`), but the button appears only if that specific page's content actually contains `class="kids-readaloud"` — most path pages don't, by design (see spec §8); eligible-but-marker-less is expected, not a regression |
+| Load a `Portal:Kids/` subpage generated via a path-page template, with no marker of any kind | Module requested (`ext.pageReader` in `RLPAGEMODULES`) **and** a button appears, reading the whole eligible content area — the opt-out default, not the old marker-required behavior |
 | Load a page named `Portal:KidsCorner` | Button does **not** appear (module not requested — outside the exact-or-subpage match) |
 | Load any non-Kids page | `ext.pageReader` module not requested (check network panel / `mw.loader.getState('ext.pageReader')`) |
 | Add `__NOPAGEREADER__` to a Kids page | Button no longer appears |
 | Add `__NOPAGEREADERHIGHLIGHT__` to a Kids page | Button still appears and speaks normally, but sentences no longer highlight |
-| Wrap content with `{{ReadAloud/start}}`/`{{ReadAloud/end}}` on any eligible page | Button appears per placement config, speech covers only the wrapped content |
+| Add a `pagereader-readaloud-skip-start`/`-skip-end` span pair around one stretch on an eligible page | That stretch is silently excluded; everything else in scope is still read |
+| Add two skip pairs on the same page, or nest one inside another | Every region is excluded; a nested pair collapses into one excluded region spanning the outermost start to the outermost end |
+| A `wikipage.content` fire for a fragment outside `#mw-content-text` (e.g. a reference-popup preview) | Does not get its own button under the opt-out default |
+| Wrap content with `{{ReadAloud/start}}`/`{{ReadAloud/end}}` on any eligible page (legacy) | Button appears per placement config, speech covers only the wrapped content |
 | Add `{{ReadAloudButton}}` elsewhere on the same page | Button (and voice select/pause button) moves to right after the template, overriding the configured placement |
 | Edit `MediaWiki:PageReader-config` to add a namespace | Takes effect without a restart |
 | Save invalid JSON to `MediaWiki:PageReader-config` | Falls back to LocalSettings defaults, no error |
