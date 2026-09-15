@@ -563,7 +563,16 @@
 						return new window.SpeechSynthesisUtterance( sentence.text );
 					} );
 
-					queuedUtterances.forEach( function ( utterance, index ) {
+					// A separate function per utterance (called from a plain
+					// for-loop below, not forEach) so each iteration's
+					// onstart/onend/onerror closures still get their own
+					// private `sentence`/`utterance`/`index` the way forEach's
+					// per-call callback scope used to provide -- var is
+					// function-scoped, not block-scoped, so inlining this
+					// directly in a for-loop body would have every closure
+					// share the loop's final index instead.
+					function queueSentenceUtterance( index ) {
+						var utterance = queuedUtterances[ index ];
 						var sentence = sentenceList[ index ];
 						applyVoiceSettings( utterance );
 
@@ -608,7 +617,21 @@
 						};
 
 						window.speechSynthesis.speak( utterance );
-					} );
+					}
+
+					// A plain for-loop, not forEach, so a synchronous onerror/
+					// onend fired by an earlier speak() call in this same loop
+					// (some engines report certain failures -- e.g. Chrome's
+					// autoplay-policy "not-allowed" error -- synchronously) can
+					// stop the loop from queuing any further utterances once it
+					// has already reset the UI to idle via stopSpeaking().
+					// forEach has no way to break early; a bare for-loop does.
+					for ( var index = 0; index < queuedUtterances.length; index++ ) {
+						if ( myGeneration !== speechGeneration ) {
+							break;
+						}
+						queueSentenceUtterance( index );
+					}
 				}
 
 				if ( sentences.length ) {
@@ -628,6 +651,12 @@
 				if ( window.console && console.warn ) {
 					console.warn( 'PageReader failed', e );
 				}
+				// A throw partway through queuing (e.g. after some, but not
+				// all, sentences were already handed to speak()) must flush
+				// whatever was already queued -- otherwise those utterances
+				// keep playing under a button that stopSpeaking() alone
+				// already reset to idle.
+				window.speechSynthesis.cancel();
 				stopSpeaking();
 			}
 		} );

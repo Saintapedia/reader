@@ -1024,6 +1024,68 @@ test( 'clicking Stop mid-sentence: a stale onend from the cancelled queue does n
 	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 0 );
 } );
 
+test( 'a synchronous onerror during queuing stops the loop from queuing any further sentences', function () {
+	// Regression found by external review: some engines report certain
+	// failures (e.g. Chrome's autoplay-policy "not-allowed" error)
+	// synchronously, before speak() even returns to the caller. The
+	// queuing loop must not keep calling speak() for later sentences once
+	// an earlier one's synchronous onerror has already reset the UI to
+	// idle via stopSpeaking() -- otherwise audio for those later
+	// sentences still plays under a button that already says idle.
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">' +
+			'One sentence here. A second sentence follows. A third one closes it out.' +
+			'</div></div>'
+	);
+	const originalSpeak = window.speechSynthesis.speak;
+	window.speechSynthesis.speak = function ( utterance ) {
+		originalSpeak.call( window.speechSynthesis, utterance );
+		if ( speechState.utterances.length === 1 ) {
+			utterance.onerror();
+		}
+	};
+
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual(
+		speechState.utterances.length, 1,
+		'no further sentence may be queued once a synchronous onerror has already stopped the read'
+	);
+	assert.strictEqual( window.document.querySelector( '.pagereader-button' ).textContent, 'Read this page aloud' );
+} );
+
+test( 'a synchronous throw partway through queuing flushes whatever was already queued', function () {
+	// Regression found by external review: a throw partway through the
+	// queuing loop (after some, but not all, sentences were already
+	// handed to speak()) is caught by the click handler's outer
+	// try/catch, which must call speechSynthesis.cancel() -- otherwise
+	// the already-queued utterance(s) keep playing under a button the
+	// catch block already reset to idle.
+	const { window, speechState, consoleWarnings } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">One sentence here. A second sentence follows.</div></div>'
+	);
+	const originalSpeak = window.speechSynthesis.speak;
+	let speakCalls = 0;
+	window.speechSynthesis.speak = function ( utterance ) {
+		speakCalls++;
+		if ( speakCalls === 2 ) {
+			throw new Error( 'simulated synthesis failure' );
+		}
+		originalSpeak.call( window.speechSynthesis, utterance );
+	};
+
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual(
+		speechState.cancelCount, 2,
+		'the initial defensive cancel plus a flush of the already-queued utterance after the throw'
+	);
+	assert.strictEqual( window.document.querySelector( '.pagereader-button' ).textContent, 'Read this page aloud' );
+	assert.ok( consoleWarnings.some( function ( w ) { return w.indexOf( 'PageReader failed' ) !== -1; } ) );
+} );
+
 test( 'an error partway through a multi-sentence queue cancels the rest and resets to idle', function () {
 	// Regression for the onerror handler added alongside upfront queuing:
 	// every queued utterance carries an onerror, not just the last one, so
