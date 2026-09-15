@@ -11,4 +11,5 @@ $magicWords = [];
 /** English (English) */
 $magicWords['en'] = [
 	'nopagereader' => [ '0', '__NOPAGEREADER__' ],
+	'nopagereaderhighlight' => [ '0', '__NOPAGEREADERHIGHLIGHT__' ],
 ];

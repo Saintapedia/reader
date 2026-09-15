@@ -118,6 +118,33 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 		$this->assertNotContains( 'ext.pageReader', $out->getModules() );
 	}
 
+	public function testNoPageReaderHighlightSwitchSuppressesHighlightOnlyOnEligiblePage(): void {
+		$this->overridePageReaderConfig();
+		$this->editPage( 'Kids:Highlight opted out', "Some content.\n__NOPAGEREADERHIGHLIGHT__" );
+
+		$out = $this->runBeforePageDisplay( 'Kids:Highlight opted out' );
+
+		// The button/read-aloud module itself must still load -- this magic
+		// word only suppresses highlighting, unlike __NOPAGEREADER__.
+		$this->assertContains( 'ext.pageReader', $out->getModules() );
+		$this->assertFalse( $out->getJsConfigVars()['wgPageReaderHighlightEnabled'] );
+	}
+
+	public function testNoPageReaderHighlightSwitchIsInertOnIneligiblePage(): void {
+		// __NOPAGEREADERHIGHLIGHT__ is checked after the same eligibility
+		// gate as __NOPAGEREADER__ (see testNonKidsPageDoesNotLoadModule) --
+		// on an ordinary, non-eligible page the magic word must not load the
+		// module and must not surface a wgPageReaderHighlightEnabled config
+		// var at all, the same as if the page carried no magic word.
+		$this->overridePageReaderConfig();
+		$this->editPage( 'Ordinary page with highlight switch', "Nothing special here.\n__NOPAGEREADERHIGHLIGHT__" );
+
+		$out = $this->runBeforePageDisplay( 'Ordinary page with highlight switch' );
+
+		$this->assertNotContains( 'ext.pageReader', $out->getModules() );
+		$this->assertArrayNotHasKey( 'wgPageReaderHighlightEnabled', $out->getJsConfigVars() );
+	}
+
 	public function testOnWikiOverlayNamespaceMakesPageEligible(): void {
 		$this->overridePageReaderConfig( [ 'PageReaderConfigPage' => 'PageReader-config' ] );
 		$this->editPage( 'MediaWiki:PageReader-config', '{"namespaces": [1004, 0]}' );
