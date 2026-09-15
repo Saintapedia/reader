@@ -1012,6 +1012,15 @@ test( 'a sentence erroring once is silently retried, and the read continues norm
 	// to preserve order) once, before the loop that triggered it is even
 	// allowed to continue -- otherwise the outer loop would go on to
 	// duplicate-queue the same sentences the retry just handled.
+	//
+	// This mock never fires onstart, so currentlyPlayingIndex never leaves
+	// -1 -- the same as a real browser where sentence 1 errors out before
+	// sentence 0 has actually started playing. Since the code has no way
+	// to tell "sentence 0 already played" from "sentence 0 never played"
+	// in that state, the retry must replay the whole pass from its own
+	// start (sentence 0 included) rather than resuming from the sentence
+	// that errored, or a genuinely-never-played opening sentence would be
+	// silently dropped by the cancel() this same handler issues.
 	const { window, speechState, speechSynthesis } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">' +
 			'Hello there. Saint today lived well. A third sentence here.' +
@@ -1030,14 +1039,16 @@ test( 'a sentence erroring once is silently retried, and the read continues norm
 	const button = window.document.querySelector( '.pagereader-button' );
 	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 
-	// The 2nd speak() call (sentence 1, "Saint today lived well.") errors
-	// and is retried: sentence 0 already succeeded and is not re-spoken,
-	// but sentence 1's retry and sentence 2 are both re-queued fresh, in
-	// order, with no duplicates and no gap.
-	assert.strictEqual( speechState.utterances.length, 4, 'one failed attempt plus 3 successful ones' );
+	assert.strictEqual( speechState.utterances.length, 5, 'the failed attempt plus a full replay of the pass' );
 	assert.deepStrictEqual(
 		speechState.utterances.map( function ( u ) { return u.text; } ),
-		[ 'Hello there.', 'Saint today lived well.', 'Saint today lived well.', 'A third sentence here.' ]
+		[
+			'Hello there.',
+			'Saint today lived well.', // fails
+			'Hello there.', // replayed -- not yet confirmed to have played
+			'Saint today lived well.', // retried, succeeds
+			'A third sentence here.',
+		]
 	);
 	// Nothing aborted -- the read is still genuinely in progress.
 	assert.strictEqual( button.textContent, 'Stop reading' );
@@ -1075,6 +1086,17 @@ test( 'each sentence gets its own independent retry -- a later failure is not tr
 	// absolute position in the article), not as a single flag applied to
 	// the whole re-queued tail -- otherwise every sentence after the
 	// first one that ever failed would wrongly lose its own single retry.
+	//
+	// As in the single-failure test above, this mock never fires onstart,
+	// so every retry here replays the whole pass from its own start
+	// (offset 0) rather than resuming from whichever sentence errored --
+	// with two independent failures, that means sentences one through
+	// three each get queued three times over (original, retry-of-sentence-
+	// two, retry-of-sentence-four) before the read finally completes; only
+	// sentence four is spoken twice, since its own failure happens on the
+	// last pass. The per-sentence retriedIndex tracking this test exists
+	// to verify still holds throughout: sentence two's single retry does
+	// not stop sentence four (a different sentence) from getting its own.
 	const { window, speechState, speechSynthesis } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">' +
 			'Sentence one. Sentence two. Sentence three. Sentence four.' +
@@ -1103,9 +1125,13 @@ test( 'each sentence gets its own independent retry -- a later failure is not tr
 		[
 			'Sentence one.',
 			'Sentence two.', // fails
+			'Sentence one.', // pass replayed from its own start
 			'Sentence two.', // retried, succeeds
 			'Sentence three.',
 			'Sentence four.', // fails on its OWN first attempt
+			'Sentence one.', // pass replayed from its own start again
+			'Sentence two.',
+			'Sentence three.',
 			'Sentence four.', // must still get its own retry, succeeds
 		]
 	);

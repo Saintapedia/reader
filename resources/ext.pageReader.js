@@ -698,7 +698,17 @@
 						}
 						window.speechSynthesis.cancel();
 						if ( absoluteIndex !== retriedIndex ) {
-							var resumeFrom = currentlyPlayingIndex === -1 ? absoluteIndex : currentlyPlayingIndex;
+							// currentlyPlayingIndex is only set by onstart, so it is
+							// still -1 whenever NO sentence in this queuing pass has
+							// started playing yet -- including sentenceList[0] itself.
+							// Falling back to absoluteIndex (the sentence that
+							// actually errored) in that case would resume the retry
+							// from the middle of the pass, permanently dropping every
+							// earlier sentence that cancel() just discarded from the
+							// native queue (e.g. the article's opening sentence).
+							// Falling back to offset -- the absolute index this whole
+							// pass started from -- replays the entire pass instead.
+							var resumeFrom = currentlyPlayingIndex === -1 ? offset : currentlyPlayingIndex;
 							speakSentences( sentences.slice( resumeFrom ), resumeFrom, absoluteIndex );
 							return;
 						}
