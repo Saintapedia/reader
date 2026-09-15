@@ -130,6 +130,21 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 		$this->assertFalse( $out->getJsConfigVars()['wgPageReaderHighlightEnabled'] );
 	}
 
+	public function testNoPageReaderHighlightSwitchIsInertOnIneligiblePage(): void {
+		// __NOPAGEREADERHIGHLIGHT__ is checked after the same eligibility
+		// gate as __NOPAGEREADER__ (see testNonKidsPageDoesNotLoadModule) --
+		// on an ordinary, non-eligible page the magic word must not load the
+		// module and must not surface a wgPageReaderHighlightEnabled config
+		// var at all, the same as if the page carried no magic word.
+		$this->overridePageReaderConfig();
+		$this->editPage( 'Ordinary page with highlight switch', "Nothing special here.\n__NOPAGEREADERHIGHLIGHT__" );
+
+		$out = $this->runBeforePageDisplay( 'Ordinary page with highlight switch' );
+
+		$this->assertNotContains( 'ext.pageReader', $out->getModules() );
+		$this->assertArrayNotHasKey( 'wgPageReaderHighlightEnabled', $out->getJsConfigVars() );
+	}
+
 	public function testOnWikiOverlayNamespaceMakesPageEligible(): void {
 		$this->overridePageReaderConfig( [ 'PageReaderConfigPage' => 'PageReader-config' ] );
 		$this->editPage( 'MediaWiki:PageReader-config', '{"namespaces": [1004, 0]}' );
