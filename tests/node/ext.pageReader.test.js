@@ -1031,6 +1031,81 @@ test( 'the Piper opt-in control shows the active state when the reader already o
 	assert.strictEqual( optIn.textContent, "Using Amy's voice — tap to use default" );
 } );
 
+test( 'clicking the Piper opt-in control moves default -> confirm without downloading', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null, null, null, null, true
+	);
+	const state = installPiperMock( window );
+	const optIn = window.document.querySelector( '.pagereader-piper-optin' );
+
+	optIn.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'confirm' );
+	assert.strictEqual( state.downloadCalls, 0, 'the first click must not start a download yet' );
+} );
+
+test( 'confirming the Piper opt-in downloads, then reaches the active state', async function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null, null, null, null, true
+	);
+	const state = installPiperMock( window );
+	const optIn = window.document.querySelector( '.pagereader-piper-optin' );
+
+	optIn.dispatchEvent( new window.Event( 'click', { bubbles: true } ) ); // default -> confirm
+	optIn.dispatchEvent( new window.Event( 'click', { bubbles: true } ) ); // confirm -> downloading
+
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'downloading' );
+
+	// Flush the mw.loader.using()/download() promise chain -- a macrotask
+	// flush (not a fixed number of Promise.resolve() hops) so this doesn't
+	// depend on exactly how many .then() links the real chain has.
+	await new Promise( function ( resolve ) { setTimeout( resolve, 0 ); } );
+
+	assert.strictEqual( state.downloadCalls, 1 );
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'active' );
+	assert.strictEqual(
+		window.localStorage.getItem( 'pagereader-engine' ), 'piper',
+		'opting in must persist the engine preference'
+	);
+} );
+
+test( 'a failed download returns the opt-in control to the default state', async function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null, null, null, null, true
+	);
+	const state = installPiperMock( window );
+	state.downloadShouldReject = true;
+	const optIn = window.document.querySelector( '.pagereader-piper-optin' );
+
+	optIn.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	optIn.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await new Promise( function ( resolve ) { setTimeout( resolve, 0 ); } );
+
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'default' );
+	assert.strictEqual(
+		window.localStorage.getItem( 'pagereader-engine' ), null,
+		'a failed download must not persist an engine preference'
+	);
+} );
+
+test( 'clicking the Piper opt-in control while active switches back to native', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	installPiperMock( window );
+	const optIn = window.document.querySelector( '.pagereader-piper-optin' );
+
+	optIn.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'default' );
+	assert.strictEqual( window.localStorage.getItem( 'pagereader-engine' ), 'native' );
+} );
+
 test( "the select's current value, not the site config, wins at speak time", function () {
 	const voices = [ { name: 'Google UK English Female' }, { name: 'Google UK English Male' } ];
 	const { window, speechState } = buildDom(

@@ -991,6 +991,49 @@
 				}
 			} );
 		}
+
+		var piperOptIn = findPiperOptIn( button );
+		if ( piperOptIn ) {
+			piperOptIn.addEventListener( 'click', function () {
+				try {
+					var state = piperOptIn.getAttribute( 'data-pagereader-piper-state' );
+					if ( state === 'active' ) {
+						writeStoredEngine( 'native' );
+						setPiperOptInState( piperOptIn, 'default' );
+						return;
+					}
+					if ( state === 'default' ) {
+						setPiperOptInState( piperOptIn, 'confirm' );
+						return;
+					}
+					if ( state !== 'confirm' ) {
+						return;
+					}
+					setPiperOptInState( piperOptIn, 'downloading' );
+					mw.loader.using( 'ext.pageReader.piper' ).then( function () {
+						return window.pageReaderPiper.download( function ( progress ) {
+							if ( progress && progress.total ) {
+								piperOptIn.textContent = mw.msg( 'pagereader-piper-downloading' ) +
+									' ' + Math.round( progress.loaded * 100 / progress.total ) + '%';
+							}
+						} );
+					} ).then( function () {
+						writeStoredEngine( 'piper' );
+						writePiperFailureCount( 0 );
+						setPiperOptInState( piperOptIn, 'active' );
+					} ).catch( function () {
+						setPiperOptInState( piperOptIn, 'default' );
+						if ( window.console && console.warn ) {
+							console.warn( 'PageReader: Piper download failed' );
+						}
+					} );
+				} catch ( e ) {
+					if ( window.console && console.warn ) {
+						console.warn( 'PageReader failed', e );
+					}
+				}
+			} );
+		}
 	}
 
 	// Resolves what element to read, most specific signal first:
