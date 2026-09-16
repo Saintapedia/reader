@@ -213,16 +213,38 @@ function buildDom( bodyHtml, configOverrides, msgOverrides, voices, seedLocalSto
 	};
 }
 
+// Test functions may return a Promise (e.g. to await a mocked async
+// Piper download/predict chain) -- since this file is plain CommonJS
+// (no top-level await), such a test's pass/fail is deferred rather than
+// awaited inline here; pendingAsyncTests is drained before the final
+// summary is printed at the bottom of this file.
+const pendingAsyncTests = [];
+
 function test( name, fn ) {
+	var result;
 	try {
-		fn();
-		passed++;
-		console.log( 'PASS: ' + name );
+		result = fn();
 	} catch ( e ) {
 		failed++;
 		failures.push( name + ': ' + e.message );
 		console.log( 'FAIL: ' + name + ' -- ' + e.message );
+		return;
 	}
+	if ( result && typeof result.then === 'function' ) {
+		pendingAsyncTests.push(
+			result.then( function () {
+				passed++;
+				console.log( 'PASS: ' + name );
+			} ).catch( function ( e ) {
+				failed++;
+				failures.push( name + ': ' + e.message );
+				console.log( 'FAIL: ' + name + ' -- ' + e.message );
+			} )
+		);
+		return;
+	}
+	passed++;
+	console.log( 'PASS: ' + name );
 }
 
 test( 'before-content: button + voice controls inserted immediately before marker element', function () {
@@ -1843,8 +1865,10 @@ test( 'a failure inside a sentence onstart highlight never breaks the read-along
 	);
 } );
 
-console.log( '\n' + passed + ' passed, ' + failed + ' failed' );
-if ( failed > 0 ) {
-	console.log( '\nFailures:\n' + failures.join( '\n' ) );
-	process.exit( 1 );
-}
+Promise.all( pendingAsyncTests ).then( function () {
+	console.log( '\n' + passed + ' passed, ' + failed + ' failed' );
+	if ( failed > 0 ) {
+		console.log( '\nFailures:\n' + failures.join( '\n' ) );
+		process.exit( 1 );
+	}
+} );
