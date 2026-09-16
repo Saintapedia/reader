@@ -515,6 +515,34 @@
 		return pauseButton;
 	}
 
+	// One persistent button cycling through 4 states, rather than a
+	// separate confirm popover -- matches this file's existing style of a
+	// single element whose label/state changes (see the pause button
+	// above) instead of introducing new hidden/shown DOM structure.
+	function createPiperOptIn() {
+		if ( !mw.config.get( 'wgPageReaderPiperEnabled' ) || !piperCapable() ) {
+			return null;
+		}
+		var optIn = document.createElement( 'button' );
+		optIn.setAttribute( 'type', 'button' );
+		optIn.className = 'pagereader-piper-optin';
+		return optIn;
+	}
+
+	function setPiperOptInState( optIn, state ) {
+		optIn.setAttribute( 'data-pagereader-piper-state', state );
+		optIn.disabled = state === 'downloading';
+		if ( state === 'confirm' ) {
+			optIn.textContent = mw.msg( 'pagereader-piper-optin-confirm' );
+		} else if ( state === 'downloading' ) {
+			optIn.textContent = mw.msg( 'pagereader-piper-downloading' );
+		} else if ( state === 'active' ) {
+			optIn.textContent = mw.msg( 'pagereader-piper-active' );
+		} else {
+			optIn.textContent = mw.msg( 'pagereader-piper-optin-label' );
+		}
+	}
+
 	// Inserted as the button's next siblings (select, label, then the
 	// optional pause button) so a later click handler can find each one via
 	// a bounded walk from the button, without needing to track a separate
@@ -551,6 +579,12 @@
 		fragment.appendChild( select );
 		fragment.appendChild( label );
 
+		var piperOptIn = createPiperOptIn();
+		if ( piperOptIn ) {
+			setPiperOptInState( piperOptIn, readStoredEngine() === 'piper' ? 'active' : 'default' );
+			fragment.appendChild( piperOptIn );
+		}
+
 		var pauseButton = createPauseButton();
 		if ( pauseButton ) {
 			fragment.appendChild( pauseButton );
@@ -580,6 +614,10 @@
 
 	function findPauseButton( button ) {
 		return findFollowingSibling( button, 'pagereader-pause-button' );
+	}
+
+	function findPiperOptIn( button ) {
+		return findFollowingSibling( button, 'pagereader-piper-optin' );
 	}
 
 	function bindButton( button, contentRoot, skipRanges ) {
