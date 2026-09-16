@@ -651,6 +651,10 @@
 		// speaking utterance still needs its own strong reference. Cleared
 		// in stopSpeaking().
 		var queuedUtterances = null;
+		// Non-null only while a Piper-engine read is active; mirrors
+		// queuedUtterances' role for the native engine (a strong reference
+		// to whatever's currently playing/pausable/cancellable).
+		var piperController = null;
 		// Bumped on every stop/restart; every utterance callback below
 		// captures the generation it was created under and checks it's
 		// still current before doing anything. Guards against a stray
@@ -665,6 +669,7 @@
 			speaking = false;
 			paused = false;
 			queuedUtterances = null;
+			piperController = null;
 			currentHighlight = clearHighlight( currentHighlight );
 			button.textContent = labelIdle;
 			button.classList.remove( 'pagereader-speaking' );
@@ -679,7 +684,11 @@
 		button.addEventListener( 'click', function () {
 			try {
 				if ( speaking ) {
-					window.speechSynthesis.cancel();
+					if ( piperController ) {
+						piperController.cancel();
+					} else {
+						window.speechSynthesis.cancel();
+					}
 					stopSpeaking();
 					return;
 				}
@@ -774,6 +783,71 @@
 						stopSpeaking();
 					};
 					window.speechSynthesis.speak( utterance );
+				}
+
+				// Requests the lazily-loaded Piper module (already cached on
+				// this device after the reader's opt-in -- see
+				// findPiperOptIn()'s click handler above) and speaks with
+				// it, falling back to the native engine entirely on any
+				// failure. Mirrors the native path's speechGeneration guard
+				// so a stale callback from an already-cancelled Piper read
+				// can't resurrect a UI state that's already moved on.
+				// Deliberately does NOT call stopSpeaking() before falling
+				// back on error -- the button must stay in its "speaking"
+				// state while the native fallback is genuinely still
+				// playing, the same way the native engine's own retry
+				// logic above never resets to idle mid-retry either; only
+				// the fallback's own onend/onerror eventually calls
+				// stopSpeaking() when the read is truly over.
+				function speakWithPiper( sentenceList, myGeneration ) {
+					function fallBackToNative() {
+						var failures = readPiperFailureCount() + 1;
+						writePiperFailureCount( failures );
+						if ( failures >= 3 ) {
+							writeStoredEngine( 'native' );
+							writePiperFailureCount( 0 );
+						}
+						piperController = null;
+						if ( sentenceList.length ) {
+							speakSentences( sentenceList, 0, -1 );
+						} else {
+							speakWholeArticle();
+						}
+					}
+
+					mw.loader.using( 'ext.pageReader.piper' ).then( function () {
+						if ( myGeneration !== speechGeneration ) {
+							return;
+						}
+						piperController = window.pageReaderPiper.speak( sentenceList, {
+							onSentenceStart: function ( sentence ) {
+								if ( myGeneration !== speechGeneration ) {
+									return;
+								}
+								currentHighlight = clearHighlight( currentHighlight );
+								currentHighlight = highlightChunk(
+									contentRoot, model.skipPredicate, sentence.start, sentence.end - sentence.start
+								);
+							},
+							onEnd: function () {
+								if ( myGeneration === speechGeneration ) {
+									writePiperFailureCount( 0 );
+									stopSpeaking();
+								}
+							},
+							onError: function () {
+								if ( myGeneration !== speechGeneration ) {
+									return;
+								}
+								fallBackToNative();
+							}
+						} );
+					} ).catch( function () {
+						if ( myGeneration !== speechGeneration ) {
+							return;
+						}
+						fallBackToNative();
+					} );
 				}
 
 				// onstart is reliably supported everywhere, unlike
@@ -931,7 +1005,9 @@
 					}
 				}
 
-				if ( sentences.length ) {
+				if ( readStoredEngine() === 'piper' && piperCapable() && mw.config.get( 'wgPageReaderPiperEnabled' ) ) {
+					speakWithPiper( sentences.length ? sentences : splitIntoSentences( model.text ), myGeneration );
+				} else if ( sentences.length ) {
 					speakSentences( sentences, 0, -1 );
 				} else {
 					speakWholeArticle();
@@ -974,12 +1050,20 @@
 						return;
 					}
 					if ( paused ) {
-						window.speechSynthesis.resume();
+						if ( piperController ) {
+							piperController.resume();
+						} else {
+							window.speechSynthesis.resume();
+						}
 						paused = false;
 						pauseButton.textContent = labelPause;
 						pauseButton.setAttribute( 'aria-pressed', 'false' );
 					} else {
-						window.speechSynthesis.pause();
+						if ( piperController ) {
+							piperController.pause();
+						} else {
+							window.speechSynthesis.pause();
+						}
 						paused = true;
 						pauseButton.textContent = labelResume;
 						pauseButton.setAttribute( 'aria-pressed', 'true' );
