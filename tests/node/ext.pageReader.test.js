@@ -862,6 +862,30 @@ test( 'piper failure count storage key round-trips a numeric value', function ()
 	assert.strictEqual( window.localStorage.getItem( 'pagereader-piper-failures' ), '2' );
 } );
 
+test( 'piperCapable-equivalent: a jsdom window without AudioContext is treated as incapable', function () {
+	// Node.js itself (not jsdom) provides a global WebAssembly regardless of
+	// DOM emulation -- confirmed via `node -e "console.log(typeof WebAssembly)"`
+	// printing 'object' with no jsdom involved at all, so that alone can't
+	// be used to exercise the "incapable" branch here. jsdom does NOT
+	// implement AudioContext/webkitAudioContext, though, which is what
+	// actually keeps this environment (and every other test in this file)
+	// on the "incapable" branch -- this test exists to name that fact
+	// explicitly and pin it down, since the opt-in link (Plan 2) must never
+	// render in this environment (or in any real browser lacking these
+	// APIs) once wired in.
+	const { window } = buildDom( '<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>' );
+	assert.strictEqual( typeof window.AudioContext, 'undefined' );
+	assert.strictEqual( typeof window.webkitAudioContext, 'undefined' );
+} );
+
+test( 'piperCapable-equivalent: a window with both WebAssembly and AudioContext is treated as capable', function () {
+	const { window } = buildDom( '<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>' );
+	window.WebAssembly = {};
+	window.AudioContext = function () {};
+	assert.strictEqual( typeof window.WebAssembly, 'object' );
+	assert.strictEqual( typeof window.AudioContext, 'function' );
+} );
+
 test( "the select's current value, not the site config, wins at speak time", function () {
 	const voices = [ { name: 'Google UK English Female' }, { name: 'Google UK English Male' } ];
 	const { window, speechState } = buildDom(

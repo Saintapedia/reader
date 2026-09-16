@@ -30,6 +30,16 @@
 		return /Firefox\//.test( ua ) && /Linux/.test( ua ) && !/Android/.test( ua );
 	}
 
+	// Piper (see ext.pageReader.piper, lazily loaded) needs both a WASM
+	// runtime and a real AudioContext to synthesize and play audio; a
+	// browser lacking either can never use it. Checked before the opt-in
+	// UI is even shown, so a reader never opts in only to have it silently
+	// fail -- see the design spec section 8.
+	function piperCapable() {
+		return typeof window.WebAssembly !== 'undefined' &&
+			!!( window.AudioContext || window.webkitAudioContext );
+	}
+
 	function getSkipSelectors() {
 		var configured = mw.config.get( 'wgPageReaderSkipSelectors' );
 		return Array.isArray( configured ) ? configured : [];
