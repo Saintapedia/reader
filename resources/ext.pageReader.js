@@ -589,6 +589,27 @@
 				speechGeneration++;
 				var myGeneration = speechGeneration;
 
+				// A single silent retry (see queueSentence()/speakWholeArticle()
+				// below) deliberately does NOT bump speechGeneration -- doing so
+				// would also invalidate the very utterances the retry just
+				// created. queuingEpoch is the narrower guard that fills that
+				// gap: bumped every time a fresh queuing pass starts (the
+				// initial call AND every retry), so a delayed callback from a
+				// speechSynthesis.cancel()-discarded utterance can still be
+				// told apart from the pass that superseded it, even though
+				// speechGeneration alone can't tell the two apart.
+				var queuingEpoch = 0;
+				// Absolute (whole-article) index of the most recently started
+				// sentence, updated on every onstart. When a not-yet-started
+				// sentence's synthesis fails while an earlier one is still
+				// actively playing, speechSynthesis.cancel() has no way to
+				// cancel just the failed one -- it stops the whole native
+				// queue, killing the currently-playing sentence too. Resuming
+				// the retry from here (rather than from whichever sentence
+				// actually errored) means that interrupted sentence gets a
+				// clean full replay instead of being silently lost.
+				var currentlyPlayingIndex = -1;
+
 				// See isFirefoxOnLinux() -- Firefox on Linux gets the browser's
 				// own default pitch/rate (1/1) instead of the configured tuning.
 				var skipPitchRateTuning = isFirefoxOnLinux();
@@ -619,19 +640,39 @@
 				// content): identical to this extension's pre-highlighting
 				// behavior -- one utterance for the whole article, no
 				// per-sentence chaining overhead or inter-sentence gaps.
-				function speakWholeArticle() {
+				// isRetry: set only on the single automatic retry below -- omitted
+				// (undefined/falsy) on the initial call.
+				function speakWholeArticle( isRetry ) {
+					var myEpoch = ++queuingEpoch;
 					var utterance = new window.SpeechSynthesisUtterance( model.text );
 					applyVoiceSettings( utterance );
 					queuedUtterances = [ utterance ];
 					utterance.onend = function () {
-						if ( myGeneration === speechGeneration ) {
+						if ( myGeneration === speechGeneration && myEpoch === queuingEpoch ) {
 							stopSpeaking();
 						}
 					};
 					utterance.onerror = function () {
-						if ( myGeneration === speechGeneration ) {
-							stopSpeaking();
+						if ( myGeneration !== speechGeneration || myEpoch !== queuingEpoch ) {
+							return;
 						}
+						// Single silent retry: most onerror causes (a stale
+						// voice reference, a transient synthesis hiccup) do
+						// not repeat on a freshly-built utterance for the
+						// same text. cancel() runs either way -- stopSpeaking()
+						// alone doesn't stop whatever the browser still
+						// considers queued -- only whether to retry differs.
+						// The retry below bumps queuingEpoch (via its own
+						// ++queuingEpoch above) without touching
+						// speechGeneration, so this utterance's own delayed
+						// callbacks (if cancel() doesn't suppress them
+						// immediately) can't be mistaken for the retry's.
+						window.speechSynthesis.cancel();
+						if ( !isRetry ) {
+							speakWholeArticle( true );
+							return;
+						}
+						stopSpeaking();
 					};
 					window.speechSynthesis.speak( utterance );
 				}
@@ -658,84 +699,126 @@
 				// 250ms. onstart (not the speak() call itself) still drives
 				// highlighting, so each sentence still lights up exactly when
 				// its audio actually starts.
-				function speakSentences( sentenceList ) {
-					queuedUtterances = sentenceList.map( function ( sentence ) {
-						return new window.SpeechSynthesisUtterance( sentence.text );
-					} );
+				// Builds, wires, and speak()s one sentence's utterance. A named
+				// function (not an inline closure inside the loop below) so each
+				// call gets its own fresh `sentence`/`utterance` bindings -- this
+				// file uses `var` throughout, which does NOT create a new binding
+				// per loop iteration the way `let` or Array#forEach's callback
+				// argument would, so inlining this directly in the for-loop below
+				// would leave every utterance's onstart closing over the SAME
+				// (final) sentence instead of its own.
+				// retriedIndex: the absolute (whole-article) sentence index
+				// that has already used its single retry, or -1 if none
+				// has yet. Tracked by absolute index rather than a plain
+				// boolean so that re-queuing the tail after sentence N
+				// fails doesn't also mark every *other* sentence in that
+				// tail as already retried -- each sentence gets its own
+				// independent single retry, not just the one that
+				// happened to fail first. myEpoch: the queuingEpoch this
+				// sentence was queued under (see speakSentences() below).
+				function queueSentence( sentenceList, index, offset, retriedIndex, myEpoch ) {
+					var sentence = sentenceList[ index ];
+					var absoluteIndex = offset + index;
+					var utterance = new window.SpeechSynthesisUtterance( sentence.text );
+					applyVoiceSettings( utterance );
+					queuedUtterances.push( utterance );
 
-					// A separate function per utterance (called from a plain
-					// for-loop below, not forEach) so each iteration's
-					// onstart/onend/onerror closures still get their own
-					// private `sentence`/`utterance`/`index` the way forEach's
-					// per-call callback scope used to provide -- var is
-					// function-scoped, not block-scoped, so inlining this
-					// directly in a for-loop body would have every closure
-					// share the loop's final index instead.
-					function queueSentenceUtterance( index ) {
-						var utterance = queuedUtterances[ index ];
-						var sentence = sentenceList[ index ];
-						applyVoiceSettings( utterance );
-
-						utterance.onstart = function () {
-							if ( myGeneration !== speechGeneration ) {
-								return;
-							}
-							try {
-								currentHighlight = clearHighlight( currentHighlight );
-								currentHighlight = highlightChunk(
-									contentRoot, model.skipPredicate, sentence.start, sentence.end - sentence.start
-								);
-							} catch ( e ) {
-								if ( window.console && console.warn ) {
-									console.warn( 'PageReader highlight failed', e );
-								}
-								currentHighlight = null;
-							}
-						};
-
-						// Only the last queued utterance's onend means the whole
-						// read is finished -- speechSynthesis itself already plays
-						// the queued utterances in order, so the others need no
-						// onend handler here.
-						if ( index === sentenceList.length - 1 ) {
-							utterance.onend = function () {
-								if ( myGeneration === speechGeneration ) {
-									stopSpeaking();
-								}
-							};
+					utterance.onstart = function () {
+						if ( myGeneration !== speechGeneration || myEpoch !== queuingEpoch ) {
+							return;
 						}
+						currentlyPlayingIndex = absoluteIndex;
+						try {
+							currentHighlight = clearHighlight( currentHighlight );
+							currentHighlight = highlightChunk(
+								contentRoot, model.skipPredicate, sentence.start, sentence.end - sentence.start
+							);
+						} catch ( e ) {
+							if ( window.console && console.warn ) {
+								console.warn( 'PageReader highlight failed', e );
+							}
+							currentHighlight = null;
+						}
+					};
 
-						// Also cancels every other still-queued sentence -- without
-						// this, an error partway through would leave the rest of the
-						// article still queued and playing while the button/UI had
-						// already reset to idle.
-						utterance.onerror = function () {
-							if ( myGeneration === speechGeneration ) {
-								window.speechSynthesis.cancel();
+					// Only the last queued utterance's onend means the whole
+					// read is finished -- speechSynthesis itself already plays
+					// the queued utterances in order, so the others need no
+					// onend handler here.
+					if ( index === sentenceList.length - 1 ) {
+						utterance.onend = function () {
+							if ( myGeneration === speechGeneration && myEpoch === queuingEpoch ) {
 								stopSpeaking();
 							}
 						};
-
-						window.speechSynthesis.speak( utterance );
 					}
 
-					// A plain for-loop, not forEach, so a synchronous onerror/
-					// onend fired by an earlier speak() call in this same loop
-					// (some engines report certain failures -- e.g. Chrome's
-					// autoplay-policy "not-allowed" error -- synchronously) can
-					// stop the loop from queuing any further utterances once it
-					// has already reset the UI to idle via stopSpeaking().
-					// forEach has no way to break early; a bare for-loop does.
-					for ( var index = 0; index < queuedUtterances.length; index++ ) {
-						if ( myGeneration !== speechGeneration ) {
+					// speechSynthesis.cancel() cannot selectively remove just
+					// this sentence from the native queue -- it stops
+					// whatever is currently playing too, which may be an
+					// earlier sentence that hasn't failed at all (Chrome
+					// synthesizes ahead, so a later sentence's synthesis can
+					// error out while an earlier one is still audibly
+					// playing). Resuming from currentlyPlayingIndex, not from
+					// this sentence, means that interrupted sentence gets a
+					// clean full replay instead of being silently dropped.
+					// Without this cancel()+retry, an error partway through
+					// would also leave the rest of the article still queued
+					// and playing while the button/UI had already reset to
+					// idle.
+					utterance.onerror = function () {
+						if ( myGeneration !== speechGeneration || myEpoch !== queuingEpoch ) {
+							return;
+						}
+						window.speechSynthesis.cancel();
+						if ( absoluteIndex !== retriedIndex ) {
+							// currentlyPlayingIndex is only set by onstart, so it is
+							// still -1 whenever NO sentence in this queuing pass has
+							// started playing yet -- including sentenceList[0] itself.
+							// Falling back to absoluteIndex (the sentence that
+							// actually errored) in that case would resume the retry
+							// from the middle of the pass, permanently dropping every
+							// earlier sentence that cancel() just discarded from the
+							// native queue (e.g. the article's opening sentence).
+							// Falling back to offset -- the absolute index this whole
+							// pass started from -- replays the entire pass instead.
+							var resumeFrom = currentlyPlayingIndex === -1 ? offset : currentlyPlayingIndex;
+							speakSentences( sentences.slice( resumeFrom ), resumeFrom, absoluteIndex );
+							return;
+						}
+						stopSpeaking();
+					};
+
+					window.speechSynthesis.speak( utterance );
+				}
+
+				// offset: absolute (whole-article) index of sentenceList[0],
+				// so each queued sentence's own absolute position can be
+				// computed and compared against retriedIndex. retriedIndex:
+				// see queueSentence() above -- pass -1 on the initial call
+				// (no sentence has used its retry yet).
+				function speakSentences( sentenceList, offset, retriedIndex ) {
+					queuedUtterances = [];
+					// Bumped on every fresh queuing pass, including a retry --
+					// unlike speechGeneration, which the retry deliberately
+					// leaves untouched (see queuingEpoch's declaration above).
+					// Checking both here means a synchronous onerror/onend
+					// firing mid-loop (which starts its own nested queuing
+					// pass, bumping queuingEpoch again) is caught on this
+					// loop's very next iteration, without needing queueSentence
+					// to separately report "did you already get superseded".
+					var myEpoch = ++queuingEpoch;
+
+					for ( var index = 0; index < sentenceList.length; index++ ) {
+						if ( myGeneration !== speechGeneration || myEpoch !== queuingEpoch ) {
 							break;
 						}
-						queueSentenceUtterance( index );
+						queueSentence( sentenceList, index, offset, retriedIndex, myEpoch );
 					}
 				}
 
 				if ( sentences.length ) {
-					speakSentences( sentences );
+					speakSentences( sentences, 0, -1 );
 				} else {
 					speakWholeArticle();
 				}

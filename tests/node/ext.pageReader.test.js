@@ -1154,22 +1154,33 @@ test( 'multi-sentence content is spoken as a queue, every sentence queued up fro
 	assert.strictEqual( typeof speechState.utterances[ 1 ].onend, 'function' );
 } );
 
-test( 'a synchronous onerror during the speak-queue loop does not leave the UI stuck showing "speaking"', function () {
-	// Regression test: speakSentences() calls speak() for every sentence
-	// synchronously in one loop; if a queued utterance's onerror fires
-	// synchronously (before the loop, and the click handler, returns),
-	// stopSpeaking() already reset everything to idle -- the trailing
-	// "speaking = true" block that runs after the loop must not stomp
-	// that reset back to a "speaking" UI.
+test( 'a sentence erroring once is silently retried, and the read continues normally', function () {
+	// speakSentences() calls speak() for every sentence synchronously in
+	// one loop; if a queued utterance's onerror fires synchronously, the
+	// single-retry path re-queues that sentence (and everything after it,
+	// to preserve order) once, before the loop that triggered it is even
+	// allowed to continue -- otherwise the outer loop would go on to
+	// duplicate-queue the same sentences the retry just handled.
+	//
+	// This mock never fires onstart, so currentlyPlayingIndex never leaves
+	// -1 -- the same as a real browser where sentence 1 errors out before
+	// sentence 0 has actually started playing. Since the code has no way
+	// to tell "sentence 0 already played" from "sentence 0 never played"
+	// in that state, the retry must replay the whole pass from its own
+	// start (sentence 0 included) rather than resuming from the sentence
+	// that errored, or a genuinely-never-played opening sentence would be
+	// silently dropped by the cancel() this same handler issues.
 	const { window, speechState, speechSynthesis } = buildDom(
-		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
+		'<div id="mw-content-text"><div class="kids-readaloud">' +
+			'Hello there. Saint today lived well. A third sentence here.' +
+			'</div></div>'
 	);
 	const originalSpeak = speechSynthesis.speak;
 	let speakCalls = 0;
 	speechSynthesis.speak = function ( utterance ) {
 		originalSpeak( utterance );
 		speakCalls++;
-		if ( speakCalls === 1 ) {
+		if ( speakCalls === 2 ) {
 			utterance.onerror();
 		}
 	};
@@ -1177,12 +1188,19 @@ test( 'a synchronous onerror during the speak-queue loop does not leave the UI s
 	const button = window.document.querySelector( '.pagereader-button' );
 	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 
-	assert.strictEqual(
-		button.textContent, 'Read this page aloud',
-		'must not be stuck showing "Stop reading" after a synchronous mid-queue error'
+	assert.strictEqual( speechState.utterances.length, 5, 'the failed attempt plus a full replay of the pass' );
+	assert.deepStrictEqual(
+		speechState.utterances.map( function ( u ) { return u.text; } ),
+		[
+			'Hello there.',
+			'Saint today lived well.', // fails
+			'Hello there.', // replayed -- not yet confirmed to have played
+			'Saint today lived well.', // retried, succeeds
+			'A third sentence here.',
+		]
 	);
-	assert.ok( !button.classList.contains( 'pagereader-speaking' ) );
-	assert.strictEqual( button.getAttribute( 'aria-pressed' ), 'false' );
+	// Nothing aborted -- the read is still genuinely in progress.
+	assert.strictEqual( button.textContent, 'Stop reading' );
 } );
 
 test( 'onstart highlights the sentence currently playing, replacing the previous one', function () {
@@ -1285,23 +1303,65 @@ test( 'clicking Stop mid-sentence: a stale onend from the cancelled queue does n
 	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 0 );
 } );
 
-test( 'a synchronous onerror during queuing stops the loop from queuing any further sentences', function () {
-	// Regression found by external review: some engines report certain
-	// failures (e.g. Chrome's autoplay-policy "not-allowed" error)
-	// synchronously, before speak() even returns to the caller. The
-	// queuing loop must not keep calling speak() for later sentences once
-	// an earlier one's synchronous onerror has already reset the UI to
-	// idle via stopSpeaking() -- otherwise audio for those later
-	// sentences still plays under a button that already says idle.
-	const { window, speechState } = buildDom(
+test( 'a sentence failing twice in a row (original + retry) aborts the whole read', function () {
+	const { window, speechState, speechSynthesis } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">' +
-			'One sentence here. A second sentence follows. A third one closes it out.' +
+			'Hello there. Saint today lived well. A third sentence here.' +
 			'</div></div>'
 	);
-	const originalSpeak = window.speechSynthesis.speak;
-	window.speechSynthesis.speak = function ( utterance ) {
-		originalSpeak.call( window.speechSynthesis, utterance );
-		if ( speechState.utterances.length === 1 ) {
+	const originalSpeak = speechSynthesis.speak;
+	speechSynthesis.speak = function ( utterance ) {
+		originalSpeak( utterance );
+		utterance.onerror();
+	};
+
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual(
+		speechState.utterances.length, 2,
+		'exactly one original attempt plus one retry attempt -- nothing after that gets queued'
+	);
+	assert.strictEqual(
+		button.textContent, 'Read this page aloud',
+		'must not be stuck showing "Stop reading" after the retry also fails'
+	);
+	assert.ok( !button.classList.contains( 'pagereader-speaking' ) );
+	assert.strictEqual( button.getAttribute( 'aria-pressed' ), 'false' );
+} );
+
+test( 'each sentence gets its own independent retry -- a later failure is not treated as already-retried', function () {
+	// Regression test: the retry must be tracked per sentence (by its
+	// absolute position in the article), not as a single flag applied to
+	// the whole re-queued tail -- otherwise every sentence after the
+	// first one that ever failed would wrongly lose its own single retry.
+	//
+	// As in the single-failure test above, this mock never fires onstart,
+	// so every retry here replays the whole pass from its own start
+	// (offset 0) rather than resuming from whichever sentence errored --
+	// with two independent failures, that means sentences one through
+	// three each get queued three times over (original, retry-of-sentence-
+	// two, retry-of-sentence-four) before the read finally completes; only
+	// sentence four is spoken twice, since its own failure happens on the
+	// last pass. The per-sentence retriedIndex tracking this test exists
+	// to verify still holds throughout: sentence two's single retry does
+	// not stop sentence four (a different sentence) from getting its own.
+	const { window, speechState, speechSynthesis } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">' +
+			'Sentence one. Sentence two. Sentence three. Sentence four.' +
+			'</div></div>'
+	);
+	const originalSpeak = speechSynthesis.speak;
+	const failedOnce = {};
+	speechSynthesis.speak = function ( utterance ) {
+		originalSpeak( utterance );
+		// Sentence 1 fails once (then succeeds on its retry); sentence 3
+		// -- on its own first-ever attempt, unrelated to sentence 1's
+		// failure -- also fails once (then succeeds on its retry).
+		if ( ( utterance.text === 'Sentence two.' || utterance.text === 'Sentence four.' ) &&
+			!failedOnce[ utterance.text ]
+		) {
+			failedOnce[ utterance.text ] = true;
 			utterance.onerror();
 		}
 	};
@@ -1309,11 +1369,95 @@ test( 'a synchronous onerror during queuing stops the loop from queuing any furt
 	window.document.querySelector( '.pagereader-button' )
 		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 
-	assert.strictEqual(
-		speechState.utterances.length, 1,
-		'no further sentence may be queued once a synchronous onerror has already stopped the read'
+	assert.deepStrictEqual(
+		speechState.utterances.map( function ( u ) { return u.text; } ),
+		[
+			'Sentence one.',
+			'Sentence two.', // fails
+			'Sentence one.', // pass replayed from its own start
+			'Sentence two.', // retried, succeeds
+			'Sentence three.',
+			'Sentence four.', // fails on its OWN first attempt
+			'Sentence one.', // pass replayed from its own start again
+			'Sentence two.',
+			'Sentence three.',
+			'Sentence four.', // must still get its own retry, succeeds
+		]
 	);
-	assert.strictEqual( window.document.querySelector( '.pagereader-button' ).textContent, 'Read this page aloud' );
+} );
+
+test( 'a stale callback from a cancelled/superseded utterance does not abort an in-progress retry', function () {
+	// Regression test: the retry deliberately does not bump
+	// speechGeneration (that would also invalidate the utterances it just
+	// created), so a delayed onend/onerror from an utterance that
+	// speechSynthesis.cancel() already discarded needs a narrower guard
+	// (queuingEpoch) to be told apart from the retry that superseded it.
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>'
+	);
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	const originalLastUtterance = speechState.utterances[ 1 ];
+	speechState.utterances[ 0 ].onstart();
+	speechState.utterances[ 1 ].onerror(); // triggers a retry, replaying from sentence 0
+
+	assert.strictEqual( speechState.utterances.length, 4, 'original queue plus a full replay' );
+	assert.strictEqual( button.textContent, 'Stop reading', 'the retry is genuinely still in progress' );
+
+	// The ORIGINAL (now-cancelled) last utterance's onend fires late --
+	// simulating a browser that doesn't synchronously suppress a
+	// cancelled utterance's callbacks. This must be ignored, not treated
+	// as "the read finished."
+	originalLastUtterance.onend();
+
+	assert.strictEqual(
+		button.textContent, 'Stop reading',
+		'a stale callback from the superseded (pre-retry) queue must not reset the UI mid-retry'
+	);
+} );
+
+test( 'speakWholeArticle (highlighting disabled) also gets a single silent retry before aborting', function () {
+	const { window, speechState, speechSynthesis } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>',
+		{ wgPageReaderHighlightEnabled: false }
+	);
+	const originalSpeak = speechSynthesis.speak;
+	let speakCalls = 0;
+	speechSynthesis.speak = function ( utterance ) {
+		originalSpeak( utterance );
+		speakCalls++;
+		if ( speakCalls === 1 ) {
+			utterance.onerror();
+		}
+	};
+
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances.length, 2, 'one failed attempt plus one successful retry' );
+	assert.strictEqual( button.textContent, 'Stop reading', 'the retry succeeded -- nothing aborted' );
+} );
+
+test( 'speakWholeArticle aborts cleanly (with cancel()) if the retry also fails', function () {
+	const { window, speechState, speechSynthesis } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>',
+		{ wgPageReaderHighlightEnabled: false }
+	);
+	const originalSpeak = speechSynthesis.speak;
+	speechSynthesis.speak = function ( utterance ) {
+		originalSpeak( utterance );
+		utterance.onerror();
+	};
+
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.utterances.length, 2, 'one original attempt plus one retry attempt' );
+	// cancelCount is 3: the click handler's unconditional initial cancel(),
+	// plus one cancel() per onerror firing (original attempt + retry).
+	assert.strictEqual( speechState.cancelCount, 3, 'cancel() must run on the exhausted-retry path too' );
+	assert.strictEqual( button.textContent, 'Read this page aloud' );
 } );
 
 test( 'a synchronous throw partway through queuing flushes whatever was already queued', function () {
@@ -1347,36 +1491,35 @@ test( 'a synchronous throw partway through queuing flushes whatever was already 
 	assert.ok( consoleWarnings.some( function ( w ) { return w.indexOf( 'PageReader failed' ) !== -1; } ) );
 } );
 
-test( 'an error partway through a multi-sentence queue cancels the rest and resets to idle', function () {
-	// Regression for the onerror handler added alongside upfront queuing:
-	// every queued utterance carries an onerror, not just the last one, so
-	// a mid-article synthesis failure must flush the remaining queue
-	// instead of leaving it playing under a button that already reset.
+test( 'a later sentence failing while an earlier one is still playing replays the earlier one, not just the failed one', function () {
+	// Regression test: speechSynthesis.cancel() can't selectively remove
+	// just the failed sentence from the native queue -- it also kills
+	// whatever is currently playing. The retry must resume from whichever
+	// sentence was actually playing (currentlyPlayingIndex), not from the
+	// one that errored, so the interrupted sentence gets replayed instead
+	// of silently dropped.
 	const { window, speechState } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">' +
-			'One sentence here. A second sentence follows. A third one closes it out.' +
+			'Sentence one. Sentence two. Sentence three. Sentence four.' +
 			'</div></div>'
 	);
-	const button = window.document.querySelector( '.pagereader-button' );
-	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
-	assert.strictEqual( speechState.utterances.length, 3, 'all three sentences are queued up front' );
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 
+	// Sentence 0 ("Sentence one.") starts playing (Chrome may have already
+	// synthesized sentences ahead of it, per the whole point of upfront
+	// queuing) -- then sentence 2 ("Sentence three."), still queued and
+	// not yet started, fails synthesis.
 	speechState.utterances[ 0 ].onstart();
-	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 1 );
-	const cancelCountBeforeError = speechState.cancelCount;
+	speechState.utterances[ 2 ].onerror();
 
-	// Simulate the middle utterance's synthesis failing mid-article.
-	speechState.utterances[ 1 ].onerror();
-
-	assert.strictEqual(
-		speechState.cancelCount, cancelCountBeforeError + 1,
-		'the rest of the queue must be cancelled on error'
-	);
-	assert.strictEqual( button.textContent, 'Read this page aloud', 'resets to idle rather than staying stuck' );
-	assert.strictEqual( button.getAttribute( 'aria-pressed' ), 'false' );
-	assert.strictEqual(
-		window.document.querySelectorAll( '.pagereader-highlight' ).length, 0,
-		'highlight from the interrupted sentence must be cleared'
+	assert.deepStrictEqual(
+		speechState.utterances.map( function ( u ) { return u.text; } ),
+		[
+			'Sentence one.', 'Sentence two.', 'Sentence three.', 'Sentence four.', // original queue
+			'Sentence one.', 'Sentence two.', 'Sentence three.', 'Sentence four.', // full replay from the interrupted sentence
+		],
+		'the retry must resume from sentence 0 (interrupted mid-play), not from sentence 2 (the one that errored)'
 	);
 } );
 
