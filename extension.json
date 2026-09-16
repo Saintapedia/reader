@@ -112,9 +112,13 @@
 			"value": { "female": [], "male": [] },
 			"description": "Per-gender ordered list of voice-name fragments (case-insensitive substring match) checked before the generic female/male name match in PageReaderVoiceGender -- lets a sysop curate known-good voices that don't self-label gender in their name (e.g. macOS 'Samantha', Windows 'Zira'). Empty by default (no behavior change); first entry to match an available voice wins."
 		},
+		"PageReaderPiperEnabled": {
+			"value": true,
+			"description": "Whether the opt-in \"Try a better voice\" client-side Piper voice option is offered. Overridable via MediaWiki:PageReader-config."
+		},
 		"PageReaderConfigPage": {
 			"value": "PageReader-config",
-			"description": "MediaWiki:-namespace JSON page (requires editinterface to edit) that can override: namespaces, titlePrefixes, pages, excludedNamespaces, excludedPages, loadEverywhere, contentClass, contentSelector, skipSelectors, buttonPlacement, voicePitch, voiceRate, voiceGender, highlightEnabled, preferredVoices. PageReaderEnabled, PageReaderActions, PageReaderContentModels, and PageReaderIncludeTalk are LocalSettings-only and cannot be overridden here. Empty string disables the overlay."
+			"description": "MediaWiki:-namespace JSON page (requires editinterface to edit) that can override: namespaces, titlePrefixes, pages, excludedNamespaces, excludedPages, loadEverywhere, contentClass, contentSelector, skipSelectors, buttonPlacement, voicePitch, voiceRate, voiceGender, highlightEnabled, preferredVoices, piperEnabled. PageReaderEnabled, PageReaderActions, PageReaderContentModels, and PageReaderIncludeTalk are LocalSettings-only and cannot be overridden here. Empty string disables the overlay."
 		}
 	},
 	"ResourceFileModulePaths": {
