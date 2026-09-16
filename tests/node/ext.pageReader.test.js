@@ -44,6 +44,10 @@ function makeMw( configOverrides, msgOverrides ) {
 		'pagereader-voice-male': 'Male',
 		'pagereader-pause-label': 'Pause reading',
 		'pagereader-pause-label-resume': 'Resume reading',
+		'pagereader-piper-optin-label': 'Try a better voice',
+		'pagereader-piper-optin-confirm': "Download Amy's voice (~60MB)?",
+		'pagereader-piper-downloading': 'Downloading voice…',
+		'pagereader-piper-active': "Using Amy's voice — tap to use default",
 	}, msgOverrides || {} );
 	const hooks = {};
 	return {
@@ -104,13 +108,17 @@ function makeSpeechSynthesis( voices, supportsPause ) {
  * given body HTML and config, and fires the wikipage.content hook once
  * (simulating MediaWiki's normal page-load behavior).
  */
-function buildDom( bodyHtml, configOverrides, msgOverrides, voices, seedLocalStorage, supportsPause, userAgent ) {
+function buildDom( bodyHtml, configOverrides, msgOverrides, voices, seedLocalStorage, supportsPause, userAgent, piperCapableFlag ) {
 	const dom = new JSDOM( '<!doctype html><html><body>' + bodyHtml + '</body></html>', {
 		url: 'https://saintapedia.org/wiki/Kids:Test',
 		runScripts: 'outside-only',
 		resources: userAgent ? { userAgent: userAgent } : undefined,
 	} );
 	const window = dom.window;
+	if ( piperCapableFlag ) {
+		window.WebAssembly = {};
+		window.AudioContext = function () {};
+	}
 	if ( seedLocalStorage ) {
 		Object.keys( seedLocalStorage ).forEach( function ( key ) {
 			window.localStorage.setItem( key, seedLocalStorage[ key ] );
@@ -901,6 +909,45 @@ test( 'mw.pageReader.splitIntoSentences behaves identically to the function used
 	assert.strictEqual( sentences.length, 2 );
 	assert.strictEqual( sentences[ 0 ].text, 'One sentence.' );
 	assert.strictEqual( sentences[ 1 ].text, 'Two sentences.' );
+} );
+
+test( 'the Piper opt-in control renders next to the voice select when enabled and capable', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null, null, null, null, true
+	);
+	const optIn = window.document.querySelector( '.pagereader-piper-optin' );
+	assert.ok( optIn, 'opt-in control should exist' );
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'default' );
+	assert.strictEqual( optIn.textContent, 'Try a better voice' );
+} );
+
+test( 'the Piper opt-in control does not render when wgPageReaderPiperEnabled is false', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: false }, null, null, null, null, null, true
+	);
+	assert.strictEqual( window.document.querySelector( '.pagereader-piper-optin' ), null );
+} );
+
+test( 'the Piper opt-in control does not render when the browser lacks WASM/AudioContext', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }
+		// piperCapableFlag omitted -- defaults to jsdom's real lack of AudioContext.
+	);
+	assert.strictEqual( window.document.querySelector( '.pagereader-piper-optin' ), null );
+} );
+
+test( 'the Piper opt-in control shows the active state when the reader already opted in', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const optIn = window.document.querySelector( '.pagereader-piper-optin' );
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'active' );
+	assert.strictEqual( optIn.textContent, "Using Amy's voice — tap to use default" );
 } );
 
 test( "the select's current value, not the site config, wins at speak time", function () {
