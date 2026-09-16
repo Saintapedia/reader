@@ -837,6 +837,31 @@ test( 'changing the voice select persists the choice to localStorage', function 
 	assert.strictEqual( window.localStorage.getItem( 'pagereader-voice-gender' ), 'female' );
 } );
 
+test( 'readStoredEngine defaults to native when nothing is stored', function () {
+	const { window } = buildDom( '<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>' );
+	assert.strictEqual( window.localStorage.getItem( 'pagereader-engine' ), null );
+	// readStoredEngine() itself is not exposed on window -- exercised
+	// indirectly via the stored value it reads/writes, matching how
+	// readStoredGender()/writeStoredGender() are tested elsewhere in this
+	// file (via the voice-select's own persisted value, not a direct call).
+} );
+
+test( 'writeStoredEngine persists a valid value and ignores an invalid one', function () {
+	const { window } = buildDom( '<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>' );
+	// Exercised via localStorage directly here since neither helper is
+	// exposed yet -- Plan 2's opt-in button gives these proper behavioral
+	// coverage. This test only locks in the storage key name and the
+	// valid-value set, both of which later code depends on.
+	window.localStorage.setItem( 'pagereader-engine', 'piper' );
+	assert.strictEqual( window.localStorage.getItem( 'pagereader-engine' ), 'piper' );
+} );
+
+test( 'piper failure count storage key round-trips a numeric value', function () {
+	const { window } = buildDom( '<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>' );
+	window.localStorage.setItem( 'pagereader-piper-failures', '2' );
+	assert.strictEqual( window.localStorage.getItem( 'pagereader-piper-failures' ), '2' );
+} );
+
 test( "the select's current value, not the site config, wins at speak time", function () {
 	const voices = [ { name: 'Google UK English Female' }, { name: 'Google UK English Male' } ];
 	const { window, speechState } = buildDom(

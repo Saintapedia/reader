@@ -432,6 +432,57 @@
 		}
 	}
 
+	// Whether the reader has opted into the client-side Piper voice (see
+	// docs/superpowers/specs/2026-09-16-piper-voice-option-design.md) or is
+	// using the browser's native speechSynthesis. Same degrade-never-break
+	// rule as readStoredGender()/writeStoredGender() above.
+	var ENGINE_VALUES = [ 'native', 'piper' ];
+	var ENGINE_STORAGE_KEY = 'pagereader-engine';
+	var PIPER_FAILURE_STORAGE_KEY = 'pagereader-piper-failures';
+
+	function isValidEngine( value ) {
+		return ENGINE_VALUES.indexOf( value ) !== -1;
+	}
+
+	function readStoredEngine() {
+		try {
+			var stored = window.localStorage.getItem( ENGINE_STORAGE_KEY );
+			return isValidEngine( stored ) ? stored : 'native';
+		} catch ( e ) {
+			return 'native';
+		}
+	}
+
+	function writeStoredEngine( value ) {
+		try {
+			window.localStorage.setItem( ENGINE_STORAGE_KEY, value );
+		} catch ( e ) {
+			// Ignored -- see readStoredEngine().
+		}
+	}
+
+	// Tracks consecutive Piper failures across separate reads (not just
+	// within one), so a persistently broken CDN/model eventually falls back
+	// to asking the reader to opt in again rather than silently retrying a
+	// dead path forever (see the design spec section 8). Reset to 0 on any
+	// successful Piper read.
+	function readPiperFailureCount() {
+		try {
+			var stored = parseInt( window.localStorage.getItem( PIPER_FAILURE_STORAGE_KEY ), 10 );
+			return isNaN( stored ) || stored < 0 ? 0 : stored;
+		} catch ( e ) {
+			return 0;
+		}
+	}
+
+	function writePiperFailureCount( value ) {
+		try {
+			window.localStorage.setItem( PIPER_FAILURE_STORAGE_KEY, String( value ) );
+		} catch ( e ) {
+			// Ignored -- see readStoredEngine().
+		}
+	}
+
 	function pauseSupported() {
 		return !!( window.speechSynthesis &&
 			typeof window.speechSynthesis.pause === 'function' &&
