@@ -1386,6 +1386,53 @@ test( 'each sentence gets its own independent retry -- a later failure is not tr
 	);
 } );
 
+test( 'a cancel() that synchronously errors sibling utterances does not cause a runaway retry cascade', function () {
+	// Regression test found live in a real Chrome (not reproducible via this
+	// file's plain cancelCount-only mock): speechSynthesis.cancel() can
+	// synchronously fire onerror on this pass's OTHER still-queued
+	// utterances too, not just the one whose own onerror called cancel().
+	// Before this fix, queuingEpoch was only bumped inside the nested
+	// speakSentences() retry call -- which happens AFTER cancel() returns --
+	// so a cascaded sibling's onerror still saw the OLD (matching) epoch and
+	// spawned its own independent retry pass, whose own siblings could
+	// cascade the same way again. Nothing ever cancels an earlier pass's
+	// still-pending utterances before the next one starts either, so the
+	// number of simultaneously-pending passes and utterances compounded
+	// pass over pass until the real recursion overflowed the call stack.
+	const { window, speechState, speechSynthesis } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">' +
+			'Sentence one. Sentence two. Sentence three.' +
+			'</div></div>'
+	);
+	const alreadyFired = new Set();
+	const originalCancel = speechSynthesis.cancel;
+	speechSynthesis.cancel = function () {
+		originalCancel();
+		// Simulate real Chrome: walk the still-queued utterances and fire
+		// onerror on each one not already fired, exactly as a native cancel()
+		// can for utterances it discards before they ever started.
+		speechState.utterances.slice().forEach( function ( u ) {
+			if ( !alreadyFired.has( u ) && typeof u.onerror === 'function' ) {
+				alreadyFired.add( u );
+				u.onerror();
+			}
+		} );
+	};
+
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.strictEqual( speechState.utterances.length, 3, 'all three queued up front' );
+
+	alreadyFired.add( speechState.utterances[ 0 ] );
+	speechState.utterances[ 0 ].onerror();
+
+	assert.strictEqual(
+		speechState.utterances.length, 6,
+		'exactly one retry pass (3 more utterances) for the sentence that failed first -- ' +
+			"the cascaded siblings' onerror must see a stale epoch and no-op, not each spawn their own retry"
+	);
+} );
+
 test( 'a stale callback from a cancelled/superseded utterance does not abort an in-progress retry', function () {
 	// Regression test: the retry deliberately does not bump
 	// speechGeneration (that would also invalidate the utterances it just
