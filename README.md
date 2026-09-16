@@ -52,7 +52,11 @@ for the full history and rationale).
   default. `$wgPageReaderPreferredVoices` lets a sysop curate specific
   known-good voice names per gender (e.g. macOS's "Samantha", which
   doesn't have "female" in its name) that take priority over the
-  generic name match.
+  generic name match. On Firefox, the pitch/rate tuning is skipped in
+  favor of the browser's own default (1/1) — Firefox on Linux (via its
+  speech-dispatcher/espeak-ng bridge) was found to badly garble audio at
+  a non-default pitch/rate on an otherwise-unaffected voice; voice-gender
+  selection is unaffected and still applies normally on Firefox.
 - A pause/resume button appears next to the voice select once speech
   starts (feature-detected — omitted entirely on a browser without
   `speechSynthesis.pause`/`resume` support).
