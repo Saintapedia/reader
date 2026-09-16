@@ -610,11 +610,12 @@
 				// clean full replay instead of being silently lost.
 				var currentlyPlayingIndex = -1;
 
-				// See isFirefoxOnLinux() -- Firefox on Linux gets the browser's
-				// own default pitch/rate (1/1) instead of the configured tuning.
+				// See isFirefoxOnLinux() -- Firefox on Linux never has these
+				// assigned at all (see applyVoiceSettings() below), leaving
+				// the browser's own default instead of the configured tuning.
 				var skipPitchRateTuning = isFirefoxOnLinux();
-				var pitch = skipPitchRateTuning ? 1 : clampNumber( mw.config.get( 'wgPageReaderVoicePitch' ), 0, 2, 1 );
-				var rate = skipPitchRateTuning ? 1 : clampNumber( mw.config.get( 'wgPageReaderVoiceRate' ), 0.1, 10, 1 );
+				var pitch = clampNumber( mw.config.get( 'wgPageReaderVoicePitch' ), 0, 2, 1 );
+				var rate = clampNumber( mw.config.get( 'wgPageReaderVoiceRate' ), 0.1, 10, 1 );
 				var voiceSelect = findVoiceSelect( button );
 				var genderPreference = voiceSelect ? voiceSelect.value : mw.config.get( 'wgPageReaderVoiceGender' );
 				var voice = pickVoice( genderPreference );
@@ -629,8 +630,20 @@
 				var sentences = highlightEnabled ? splitIntoSentences( model.text ) : [];
 
 				function applyVoiceSettings( utterance ) {
-					utterance.pitch = pitch;
-					utterance.rate = rate;
+					// Deliberately does not merely assign 1/1 here for the
+					// Firefox/Linux case: the garbling this works around
+					// reproduced identically whether pitch/rate were tuned
+					// or explicitly assigned their own numeric defaults --
+					// only an utterance whose pitch/rate were never touched
+					// at all (left at the browser's own untouched default)
+					// came out clean. Firefox's speech-dispatcher/espeak-ng
+					// bridge apparently takes a different, buggy code path
+					// once JS has set these properties at all, regardless
+					// of the value.
+					if ( !skipPitchRateTuning ) {
+						utterance.pitch = pitch;
+						utterance.rate = rate;
+					}
 					if ( voice ) {
 						utterance.voice = voice;
 					}
