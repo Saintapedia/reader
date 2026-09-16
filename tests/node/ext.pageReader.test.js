@@ -163,6 +163,16 @@ function installPiperMock( window, loaderShouldReject ) {
 }
 
 /**
+ * Waits for the microtask queue (any pending mw.loader.using(...).then(...)
+ * chain) to fully drain, via a macrotask (setTimeout) rather than a fixed
+ * number of Promise.resolve() hops -- robust regardless of how many .then()
+ * links the real chain under test has.
+ */
+function flushAsync() {
+	return new Promise( function ( resolve ) { setTimeout( resolve, 0 ); } );
+}
+
+/**
  * Loads the real ext.pageReader.js into a fresh jsdom document with the
  * given body HTML and config, and fires the wikipage.content hook once
  * (simulating MediaWiki's normal page-load behavior).
@@ -1061,7 +1071,7 @@ test( 'confirming the Piper opt-in downloads, then reaches the active state', as
 	// Flush the mw.loader.using()/download() promise chain -- a macrotask
 	// flush (not a fixed number of Promise.resolve() hops) so this doesn't
 	// depend on exactly how many .then() links the real chain has.
-	await new Promise( function ( resolve ) { setTimeout( resolve, 0 ); } );
+	await flushAsync();
 
 	assert.strictEqual( state.downloadCalls, 1 );
 	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'active' );
@@ -1082,7 +1092,7 @@ test( 'a failed download returns the opt-in control to the default state', async
 
 	optIn.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 	optIn.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
-	await new Promise( function ( resolve ) { setTimeout( resolve, 0 ); } );
+	await flushAsync();
 
 	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'default' );
 	assert.strictEqual(
