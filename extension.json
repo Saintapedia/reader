@@ -137,7 +137,11 @@
 				"pagereader-voice-female",
 				"pagereader-voice-male",
 				"pagereader-pause-label",
-				"pagereader-pause-label-resume"
+				"pagereader-pause-label-resume",
+				"pagereader-piper-optin-label",
+				"pagereader-piper-optin-confirm",
+				"pagereader-piper-downloading",
+				"pagereader-piper-active"
 			]
 		},
 		"ext.pageReader.piper": {
