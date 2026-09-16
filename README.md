@@ -57,6 +57,12 @@ for the full history and rationale).
   speech-dispatcher/espeak-ng bridge) was found to badly garble audio at
   a non-default pitch/rate on an otherwise-unaffected voice; voice-gender
   selection is unaffected and still applies normally on Firefox.
+- An opt-in, client-side neural voice ("Amy," via the open-source
+  [Piper](https://github.com/rhasspy/piper) project) for readers who
+  want better or more consistent quality than their browser's own
+  built-in voice — a one-time ~60MB download, cached on-device, never
+  sending page text anywhere. `$wgPageReaderPiperEnabled` (default
+  `true`) is the sysop kill switch.
 - A pause/resume button appears next to the voice select once speech
   starts (feature-detected — omitted entirely on a browser without
   `speechSynthesis.pause`/`resume` support).

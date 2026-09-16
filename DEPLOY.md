@@ -82,9 +82,7 @@ one gender doesn't clobber the other's LocalSettings value, e.g.:
 ```
 
 `piperEnabled` (default `true`) gates whether the client-side Piper voice
-opt-in appears at all — see the [design spec](docs/superpowers/specs/2026-09-16-piper-voice-option-design.md)
-for the full feature (not yet built as of this plan; this plan only adds
-the config knob).
+opt-in appears at all — see "Opt-in Piper voice" below for the full feature.
 
 **LocalSettings-only, cannot be overridden here**: `PageReaderEnabled`,
 `PageReaderActions`, `PageReaderContentModels`, `PageReaderIncludeTalk`,
@@ -101,6 +99,29 @@ the button and speech working normally on that page but suppress
 read-along sentence highlighting — useful for a page where PageReader
 is enabled outside the Kids namespace and the highlight styling isn't
 wanted.
+
+## Opt-in Piper voice
+
+Readers can opt into a higher-quality, client-side neural voice
+("Amy," `en_US-amy-medium` from the open-source [Piper](https://github.com/rhasspy/piper)
+project) via a "Try a better voice" control next to the voice-gender
+select, on any browser with WebAssembly and AudioContext support. The
+voice model (~60MB) downloads once per device, from jsdelivr, and is
+cached by the browser — no text is ever sent to a third party, and
+nothing downloads until the reader explicitly opts in.
+
+`$wgPageReaderPiperEnabled` (default `true`, overridable via
+`MediaWiki:PageReader-config` like everything else) turns this control
+off site-wide if needed. Any failure in the Piper path (a blocked CDN,
+an unsupported browser, a corrupt download) falls back to the native
+voice for that read; 3 consecutive failures clear the reader's saved
+preference so they're asked to opt in again rather than silently stuck.
+
+Full design rationale: [`docs/superpowers/specs/2026-09-16-piper-voice-option-design.md`](docs/superpowers/specs/2026-09-16-piper-voice-option-design.md).
+Real audio quality, download/caching behavior, and cross-browser
+consistency are **not** covered by `npm test` (jsdom cannot execute
+real WASM or real network fetches) — see the smoke checklist below and
+verify manually in a real browser before trusting a green CI run alone.
 
 ## Content scoping: what gets read
 
@@ -202,6 +223,14 @@ by writing `{{ReadAloudNoHighlight}}` instead of the raw magic word.
 | Click the button to start speech (multi-sentence article) | The current sentence highlights as it's spoken, moving sentence-by-sentence |
 | Click "Stop reading" mid-sentence | Speech and highlighting both stop immediately; the next sentence is never spoken |
 | Set `$wgPageReaderHighlightEnabled = false;` | Whole article is spoken as one utterance with no highlighting (kill switch) |
+| On a WASM/AudioContext-capable browser with `$wgPageReaderPiperEnabled` true | The "Try a better voice" control appears next to the voice select |
+| Set `$wgPageReaderPiperEnabled = false;` | The control does not appear |
+| Click "Try a better voice" once | Label changes to a download-size confirmation; nothing downloads yet |
+| Click it again | Downloads Amy's voice model with visible progress, then shows "Using Amy's voice — tap to use default" |
+| Click "Read this page aloud" after opting in | Reads with Amy's voice; sentence highlighting stays in sync |
+| Click "Stop reading" / the pause button while using Amy's voice | Both work identically to the native engine |
+| Block `cdn.jsdelivr.net` and click "Read this page aloud" after opting in | Falls back to the native voice for that read, no broken UI |
+| Force 3 consecutive Piper failures (e.g. with jsdelivr blocked) | Engine preference reverts to native; the opt-in control returns to its default (not "active") state |
 
 ## Accessibility checklist
 
