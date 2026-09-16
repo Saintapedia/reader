@@ -139,6 +139,9 @@
 				"pagereader-pause-label",
 				"pagereader-pause-label-resume"
 			]
+		},
+		"ext.pageReader.piper": {
+			"scripts": [ "resources/ext.pageReader.piper.js" ]
 		}
 	}
 }
