@@ -71,7 +71,8 @@ breaking the site.
 **Overridable keys**: `namespaces`, `titlePrefixes`, `pages`,
 `excludedNamespaces`, `excludedPages`, `loadEverywhere`, `contentClass`,
 `contentSelector`, `skipSelectors`, `buttonPlacement`, `voicePitch`,
-`voiceRate`, `voiceGender`, `highlightEnabled`, `preferredVoices`.
+`voiceRate`, `voiceGender`, `highlightEnabled`, `preferredVoices`,
+`piperEnabled`.
 `preferredVoices` is `{"female": [...], "male": [...]}` — curating just
 one gender doesn't clobber the other's LocalSettings value, e.g.:
 ```json
@@ -79,6 +80,11 @@ one gender doesn't clobber the other's LocalSettings value, e.g.:
 	"preferredVoices": { "female": ["Samantha", "Zira"] }
 }
 ```
+
+`piperEnabled` (default `true`) gates whether the client-side Piper voice
+opt-in appears at all — see the [design spec](docs/superpowers/specs/2026-09-16-piper-voice-option-design.md)
+for the full feature (not yet built as of this plan; this plan only adds
+the config knob).
 
 **LocalSettings-only, cannot be overridden here**: `PageReaderEnabled`,
 `PageReaderActions`, `PageReaderContentModels`, `PageReaderIncludeTalk`,
