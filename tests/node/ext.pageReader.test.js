@@ -886,6 +886,23 @@ test( 'piperCapable-equivalent: a window with both WebAssembly and AudioContext 
 	assert.strictEqual( typeof window.AudioContext, 'function' );
 } );
 
+test( 'mw.pageReader exposes buildSpeechModel, splitIntoSentences, highlightChunk, and clearHighlight', function () {
+	const { window } = buildDom( '<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>' );
+	assert.strictEqual( typeof window.mw.pageReader, 'object' );
+	assert.strictEqual( typeof window.mw.pageReader.buildSpeechModel, 'function' );
+	assert.strictEqual( typeof window.mw.pageReader.splitIntoSentences, 'function' );
+	assert.strictEqual( typeof window.mw.pageReader.highlightChunk, 'function' );
+	assert.strictEqual( typeof window.mw.pageReader.clearHighlight, 'function' );
+} );
+
+test( 'mw.pageReader.splitIntoSentences behaves identically to the function used internally', function () {
+	const { window } = buildDom( '<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>' );
+	const sentences = window.mw.pageReader.splitIntoSentences( 'One sentence. Two sentences.' );
+	assert.strictEqual( sentences.length, 2 );
+	assert.strictEqual( sentences[ 0 ].text, 'One sentence.' );
+	assert.strictEqual( sentences[ 1 ].text, 'Two sentences.' );
+} );
+
 test( "the select's current value, not the site config, wins at speak time", function () {
 	const voices = [ { name: 'Google UK English Female' }, { name: 'Google UK English Male' } ];
 	const { window, speechState } = buildDom(

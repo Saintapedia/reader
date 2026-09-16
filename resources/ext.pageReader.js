@@ -1173,6 +1173,19 @@
 		}
 	}
 
+	// Exposed so the lazily-loaded ext.pageReader.piper module (see
+	// docs/superpowers/specs/2026-09-16-piper-voice-option-design.md) can
+	// reuse this file's own sentence-splitting and highlighting logic
+	// instead of duplicating it -- keeping both engines' idea of "what
+	// counts as a sentence" and "how it's highlighted" identical. A plain
+	// object on mw, not a ResourceLoader dependency, since the Piper module
+	// is requested lazily, long after this module has already run.
+	mw.pageReader = mw.pageReader || {};
+	mw.pageReader.buildSpeechModel = buildSpeechModel;
+	mw.pageReader.splitIntoSentences = splitIntoSentences;
+	mw.pageReader.highlightChunk = highlightChunk;
+	mw.pageReader.clearHighlight = clearHighlight;
+
 	try {
 		if ( typeof mw !== 'undefined' && mw.hook ) {
 			mw.hook( 'wikipage.content' ).add( initPageReader );
