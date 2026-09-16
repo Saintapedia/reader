@@ -104,6 +104,65 @@ function makeSpeechSynthesis( voices, supportsPause ) {
 }
 
 /**
+ * Mocks window.pageReaderPiper the same way makeSpeechSynthesis() mocks
+ * window.speechSynthesis -- this file's real ext.pageReader.piper.js is
+ * never loaded or exercised in these tests (it does a real dynamic
+ * import() of a CDN URL, which jsdom cannot meaningfully fake); instead
+ * these tests mock the CONTRACT ext.pageReader.js's click handler expects
+ * from it, which is where the actual branching/fallback/failure-counting
+ * logic under test lives.
+ */
+function makePiperMock() {
+	const state = { downloadCalls: 0, downloadShouldReject: false, speakCalls: [], lastController: null };
+	const piper = {
+		download: function ( onProgress ) {
+			state.downloadCalls++;
+			if ( state.downloadShouldReject ) {
+				return Promise.reject( new Error( 'simulated download failure' ) );
+			}
+			if ( typeof onProgress === 'function' ) {
+				onProgress( { loaded: 50, total: 100 } );
+				onProgress( { loaded: 100, total: 100 } );
+			}
+			return Promise.resolve();
+		},
+		speak: function ( sentenceList, callbacks ) {
+			const controller = {
+				cancelled: false,
+				paused: false,
+				cancel: function () { controller.cancelled = true; },
+				pause: function () { controller.paused = true; },
+				resume: function () { controller.paused = false; },
+			};
+			state.speakCalls.push( { sentenceList: sentenceList, callbacks: callbacks } );
+			state.lastController = controller;
+			return controller;
+		},
+	};
+	return { piper: piper, state: state };
+}
+
+/**
+ * Installs a mocked window.pageReaderPiper and a window.mw.loader.using()
+ * that resolves immediately (simulating an already-cached module fetch --
+ * real load-failure behavior is exercised separately by resolving to a
+ * rejected promise instead). Call after buildDom(), before dispatching the
+ * click that triggers the mw.loader.using(...).then(...) chain.
+ */
+function installPiperMock( window, loaderShouldReject ) {
+	const { piper, state } = makePiperMock();
+	window.pageReaderPiper = piper;
+	window.mw.loader = {
+		using: function () {
+			return loaderShouldReject ?
+				Promise.reject( new Error( 'simulated module load failure' ) ) :
+				Promise.resolve();
+		},
+	};
+	return state;
+}
+
+/**
  * Loads the real ext.pageReader.js into a fresh jsdom document with the
  * given body HTML and config, and fires the wikipage.content hook once
  * (simulating MediaWiki's normal page-load behavior).
