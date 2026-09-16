@@ -770,6 +770,21 @@
 						if ( myGeneration !== speechGeneration || myEpoch !== queuingEpoch ) {
 							return;
 						}
+						// Bump the epoch before cancel(), not after: cancel() can
+						// synchronously fire onerror on this pass's other still-queued
+						// sentences too (observed in real Chrome, not simulated by this
+						// file's own tests before this fix) -- if that happens while
+						// queuingEpoch still matches this pass, each sibling's onerror
+						// sees itself as still-current and spawns its own independent
+						// retry pass, whose own siblings can cascade the same way again.
+						// Left unguarded, this compounds pass over pass (nothing ever
+						// cancels the earlier passes' still-pending utterances either,
+						// since cancel() already returned by the time they're queued)
+						// until the recursion overflows the call stack. Bumping here
+						// first means every sibling's guard above sees a stale epoch
+						// and no-ops, so only the sentence that failed first ever
+						// starts a retry.
+						queuingEpoch++;
 						window.speechSynthesis.cancel();
 						if ( absoluteIndex !== retriedIndex ) {
 							// currentlyPlayingIndex is only set by onstart, so it is
