@@ -821,8 +821,19 @@
 							}
 						}
 						piperController = null;
-						if ( sentenceList.length ) {
-							speakSentences( sentenceList, 0, -1 );
+						// Deliberately uses the outer sentences/highlightEnabled
+						// (the same condition the top-level branch above used to
+						// pick speakWithPiper() in the first place), not
+						// sentenceList -- sentenceList is never empty even when
+						// highlighting is off (it's the single whole-article
+						// chunk built above), so checking its length here would
+						// route a highlight-disabled fallback through
+						// speakSentences() and highlight that single "sentence"
+						// (the entire article) anyway, contradicting
+						// highlightEnabled the same way finding 4 did for the
+						// Piper path itself.
+						if ( sentences.length ) {
+							speakSentences( sentences, 0, -1 );
 						} else {
 							speakWholeArticle();
 						}

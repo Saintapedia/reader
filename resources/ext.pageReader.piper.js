@@ -68,13 +68,21 @@
 		var currentAudio = null;
 
 		function playCurrentAudio() {
-			currentAudio.play().catch( function () {
+			currentAudio.play().catch( function ( error ) {
 				// HTMLMediaElement.play()'s returned promise rejects on
 				// failures the 'error' event does not cover (e.g. an
 				// autoplay-policy block) -- without this .catch(), such a
 				// rejection would be an unhandled promise rejection and
 				// the caller would never learn playback actually failed.
-				if ( !cancelled ) {
+				// But calling .pause() while a play() request is still in
+				// flight *also* rejects that same promise, with an
+				// AbortError, in every major browser -- an expected,
+				// harmless consequence of the reader (or cancel()) simply
+				// pausing quickly, not a real synthesis/playback failure.
+				// Reporting that as onError() would wrongly trigger the
+				// native fallback (and count as a Piper failure) on an
+				// ordinary pause.
+				if ( !cancelled && !( error && error.name === 'AbortError' ) ) {
 					callbacks.onError();
 				}
 			} );

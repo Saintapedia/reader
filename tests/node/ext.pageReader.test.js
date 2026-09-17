@@ -1227,6 +1227,38 @@ test( 'a Piper onError falls back to the native engine for that read', async fun
 	assert.strictEqual( button.textContent, 'Stop reading', 'must stay in the speaking state during fallback' );
 } );
 
+test( 'a Piper onError with highlighting disabled falls back via speakWholeArticle, not speakSentences', async function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>',
+		{ wgPageReaderPiperEnabled: true, wgPageReaderHighlightEnabled: false }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await flushAsync();
+
+	state.speakCalls[ 0 ].callbacks.onError();
+
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.strictEqual(
+		speechState.spoken[ 0 ], 'Hello there. Saint today lived well.',
+		'must fall back to speaking the whole article as one utterance, not just the single ' +
+			'Piper chunk (also the whole article) queued as if it were a real sentence'
+	);
+	// speakSentences()'s queueSentence() always assigns utterance.onstart
+	// (for highlighting); speakWholeArticle() never does -- this is the
+	// cheapest reliable way to tell the two paths apart in this mock.
+	// Falling back via speakSentences() here (rather than
+	// speakWholeArticle()) would highlight this one "sentence" -- i.e.
+	// the entire article -- contradicting wgPageReaderHighlightEnabled:
+	// false the same way finding 4 did for the Piper engine itself.
+	assert.strictEqual(
+		typeof speechState.utterances[ 0 ].onstart, 'undefined',
+		'must go through speakWholeArticle(), not speakSentences()'
+	);
+} );
+
 test( 'the 3rd consecutive Piper failure clears the engine preference back to native', async function () {
 	const { window } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
