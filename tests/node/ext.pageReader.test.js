@@ -352,6 +352,24 @@ test( 'top-of-content: button is first child and is excluded from speech text', 
 	);
 } );
 
+test( 'top-of-content: Piper opt-in button text is excluded from speech text', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Story text here.</div></div>',
+		{ wgPageReaderButtonPlacement: 'top-of-content', wgPageReaderPiperEnabled: true },
+		null, null, null, null, null, true
+	);
+	const content = window.document.querySelector( '.kids-readaloud' );
+	const optIn = content.querySelector( '.pagereader-piper-optin' );
+	assert.ok( optIn, 'opt-in control should be inserted inside contentRoot for top-of-content placement' );
+
+	content.firstElementChild.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.strictEqual(
+		speechState.spoken[ 0 ], 'Story text here.',
+		"the Piper opt-in control's own label text must not leak into speech when it sits inside contentRoot"
+	);
+} );
+
 test( 'after-heading: falls back to before-content when #firstHeading is missing', function () {
 	const { window } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
@@ -1225,6 +1243,35 @@ test( 'a Piper onError falls back to the native engine for that read', async fun
 	// button to idle even though audio is now genuinely playing natively,
 	// mirroring the exact class of bug #14 fixed earlier in this project.
 	assert.strictEqual( button.textContent, 'Stop reading', 'must stay in the speaking state during fallback' );
+} );
+
+test( 'a Piper onError firing twice only falls back once and cancels the Piper controller', async function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await flushAsync();
+
+	const controller = state.lastController;
+	state.speakCalls[ 0 ].callbacks.onError();
+	state.speakCalls[ 0 ].callbacks.onError(); // a second, duplicate failure signal for the same read
+
+	assert.strictEqual(
+		controller.cancelled, true,
+		'the Piper controller must be cancelled so it cannot keep firing callbacks in the background'
+	);
+	assert.strictEqual(
+		speechState.spoken.length, 1,
+		'a duplicate onError must not start a second, competing native read'
+	);
+	assert.strictEqual(
+		window.localStorage.getItem( 'pagereader-piper-failures' ), '1',
+		'a duplicate onError must not double-count the failure'
+	);
 } );
 
 test( 'a Piper onError with highlighting disabled falls back via speakWholeArticle, not speakSentences', async function () {

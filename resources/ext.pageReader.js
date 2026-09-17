@@ -146,7 +146,8 @@
 			'pagereader-button',
 			'pagereader-voice-select',
 			'pagereader-visually-hidden',
-			'pagereader-pause-button'
+			'pagereader-pause-button',
+			'pagereader-piper-optin'
 		];
 		return function ( textNode ) {
 			if ( isInsideAnySkipRange( textNode, skipRanges ) ) {
@@ -800,7 +801,31 @@
 				// the fallback's own onend/onerror eventually calls
 				// stopSpeaking() when the read is truly over.
 				function speakWithPiper( sentenceList, myGeneration ) {
+					// Guards against fallBackToNative() running twice for the
+					// same read -- the Piper controller's onError and the
+					// mw.loader.using().catch() are two independent failure
+					// paths that could both fire for the same underlying
+					// failure, and without this flag a second call would
+					// double-count the failure and start a second, competing
+					// native read on top of the first.
+					var fallenBack = false;
 					function fallBackToNative() {
+						if ( fallenBack ) {
+							return;
+						}
+						fallenBack = true;
+						// cancel() (not just dropping the reference) stops the
+						// Piper controller's own in-flight audio/synthesis and
+						// sets its internal cancelled flag -- without it, a
+						// sentence already in flight keeps calling
+						// onSentenceStart/onEnd/onError after control has
+						// already moved to the native fallback below, since
+						// fallBackToNative() never bumps speechGeneration and
+						// those callbacks only check myGeneration/speechGeneration
+						// equality, not whether piperController is still theirs.
+						if ( piperController ) {
+							piperController.cancel();
+						}
 						var failures = readPiperFailureCount() + 1;
 						writePiperFailureCount( failures );
 						if ( failures >= 3 ) {

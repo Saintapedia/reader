@@ -32,7 +32,16 @@
 	// per page load.
 	function loadLibrary() {
 		if ( !libraryPromise ) {
-			libraryPromise = import( PIPER_CDN_URL );
+			// A rejected import() (CDN blip, offline, blocked) must not be
+			// memoized permanently -- without resetting libraryPromise back
+			// to null on rejection, `!libraryPromise` above would stay
+			// false forever, so a reader whose opt-in click failed once
+			// could never successfully retry for the rest of the page's
+			// lifetime, even after the network/CDN recovered.
+			libraryPromise = import( PIPER_CDN_URL ).catch( function ( error ) {
+				libraryPromise = null;
+				throw error;
+			} );
 		}
 		return libraryPromise;
 	}
