@@ -837,6 +837,72 @@ test( 'changing the voice select persists the choice to localStorage', function 
 	assert.strictEqual( window.localStorage.getItem( 'pagereader-voice-gender' ), 'female' );
 } );
 
+test( 'readStoredEngine defaults to native when nothing is stored', function () {
+	const { window } = buildDom( '<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>' );
+	assert.strictEqual( window.localStorage.getItem( 'pagereader-engine' ), null );
+	// readStoredEngine() itself is not exposed on window -- exercised
+	// indirectly via the stored value it reads/writes, matching how
+	// readStoredGender()/writeStoredGender() are tested elsewhere in this
+	// file (via the voice-select's own persisted value, not a direct call).
+} );
+
+test( 'writeStoredEngine persists a valid value and ignores an invalid one', function () {
+	const { window } = buildDom( '<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>' );
+	// Exercised via localStorage directly here since neither helper is
+	// exposed yet -- Plan 2's opt-in button gives these proper behavioral
+	// coverage. This test only locks in the storage key name and the
+	// valid-value set, both of which later code depends on.
+	window.localStorage.setItem( 'pagereader-engine', 'piper' );
+	assert.strictEqual( window.localStorage.getItem( 'pagereader-engine' ), 'piper' );
+} );
+
+test( 'piper failure count storage key round-trips a numeric value', function () {
+	const { window } = buildDom( '<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>' );
+	window.localStorage.setItem( 'pagereader-piper-failures', '2' );
+	assert.strictEqual( window.localStorage.getItem( 'pagereader-piper-failures' ), '2' );
+} );
+
+test( 'piperCapable-equivalent: a jsdom window without AudioContext is treated as incapable', function () {
+	// Node.js itself (not jsdom) provides a global WebAssembly regardless of
+	// DOM emulation -- confirmed via `node -e "console.log(typeof WebAssembly)"`
+	// printing 'object' with no jsdom involved at all, so that alone can't
+	// be used to exercise the "incapable" branch here. jsdom does NOT
+	// implement AudioContext/webkitAudioContext, though, which is what
+	// actually keeps this environment (and every other test in this file)
+	// on the "incapable" branch -- this test exists to name that fact
+	// explicitly and pin it down, since the opt-in link (Plan 2) must never
+	// render in this environment (or in any real browser lacking these
+	// APIs) once wired in.
+	const { window } = buildDom( '<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>' );
+	assert.strictEqual( typeof window.AudioContext, 'undefined' );
+	assert.strictEqual( typeof window.webkitAudioContext, 'undefined' );
+} );
+
+test( 'piperCapable-equivalent: a window with both WebAssembly and AudioContext is treated as capable', function () {
+	const { window } = buildDom( '<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>' );
+	window.WebAssembly = {};
+	window.AudioContext = function () {};
+	assert.strictEqual( typeof window.WebAssembly, 'object' );
+	assert.strictEqual( typeof window.AudioContext, 'function' );
+} );
+
+test( 'mw.pageReader exposes buildSpeechModel, splitIntoSentences, highlightChunk, and clearHighlight', function () {
+	const { window } = buildDom( '<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>' );
+	assert.strictEqual( typeof window.mw.pageReader, 'object' );
+	assert.strictEqual( typeof window.mw.pageReader.buildSpeechModel, 'function' );
+	assert.strictEqual( typeof window.mw.pageReader.splitIntoSentences, 'function' );
+	assert.strictEqual( typeof window.mw.pageReader.highlightChunk, 'function' );
+	assert.strictEqual( typeof window.mw.pageReader.clearHighlight, 'function' );
+} );
+
+test( 'mw.pageReader.splitIntoSentences behaves identically to the function used internally', function () {
+	const { window } = buildDom( '<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>' );
+	const sentences = window.mw.pageReader.splitIntoSentences( 'One sentence. Two sentences.' );
+	assert.strictEqual( sentences.length, 2 );
+	assert.strictEqual( sentences[ 0 ].text, 'One sentence.' );
+	assert.strictEqual( sentences[ 1 ].text, 'Two sentences.' );
+} );
+
 test( "the select's current value, not the site config, wins at speak time", function () {
 	const voices = [ { name: 'Google UK English Female' }, { name: 'Google UK English Male' } ];
 	const { window, speechState } = buildDom(

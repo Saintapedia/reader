@@ -35,7 +35,8 @@ class PageReaderConfigService {
 	 *   voiceRate:float,
 	 *   voiceGender:string,
 	 *   highlightEnabled:bool,
-	 *   preferredVoices:array{female:array<int,string>,male:array<int,string>}
+	 *   preferredVoices:array{female:array<int,string>,male:array<int,string>},
+	 *   piperEnabled:bool
 	 * }
 	 */
 	public function getEffectiveConfig( Config $mainConfig ): array {
@@ -55,6 +56,7 @@ class PageReaderConfigService {
 			'voiceGender' => $mainConfig->get( 'PageReaderVoiceGender' ),
 			'highlightEnabled' => $mainConfig->get( 'PageReaderHighlightEnabled' ),
 			'preferredVoices' => $mainConfig->get( 'PageReaderPreferredVoices' ),
+			'piperEnabled' => $mainConfig->get( 'PageReaderPiperEnabled' ),
 		];
 
 		$overlay = $this->getResolvedOverlay( $mainConfig );
@@ -187,7 +189,7 @@ class PageReaderConfigService {
 		// Only accept an actual JSON boolean (true/false, unquoted) — a loose
 		// (bool) cast would silently turn a sysop's typo'd "false" (string)
 		// into true, the opposite of a graceful degrade on malformed input.
-		foreach ( [ 'loadEverywhere', 'highlightEnabled' ] as $key ) {
+		foreach ( [ 'loadEverywhere', 'highlightEnabled', 'piperEnabled' ] as $key ) {
 			if ( isset( $raw[$key] ) && is_bool( $raw[$key] ) ) {
 				$overlay[$key] = $raw[$key];
 			}

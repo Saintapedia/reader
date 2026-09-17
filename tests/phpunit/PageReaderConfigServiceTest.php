@@ -36,6 +36,7 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 			'PageReaderVoiceGender' => 'auto',
 			'PageReaderHighlightEnabled' => true,
 			'PageReaderPreferredVoices' => [ 'female' => [ 'Samantha' ], 'male' => [ 'Daniel' ] ],
+			'PageReaderPiperEnabled' => true,
 		] );
 	}
 
@@ -219,6 +220,26 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
 
 		$this->assertTrue( $effective['highlightEnabled'] );
+	}
+
+	public function testPiperEnabledOverlayOverridesLocalSettings(): void {
+		$this->baseConfig( [ 'PageReaderPiperEnabled' => true ] );
+		$this->editPage( 'MediaWiki:PageReader-config', '{"piperEnabled": false}' );
+
+		$service = new PageReaderConfigService();
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertFalse( $effective['piperEnabled'] );
+	}
+
+	public function testNonBooleanPiperEnabledOverlayIsDropped(): void {
+		$this->baseConfig( [ 'PageReaderPiperEnabled' => true ] );
+		$this->editPage( 'MediaWiki:PageReader-config', '{"piperEnabled": "false"}' );
+
+		$service = new PageReaderConfigService();
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertTrue( $effective['piperEnabled'] );
 	}
 
 	public function testPreferredVoicesOverlayIsUsedVerbatim(): void {

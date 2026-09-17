@@ -30,6 +30,16 @@
 		return /Firefox\//.test( ua ) && /Linux/.test( ua ) && !/Android/.test( ua );
 	}
 
+	// Piper (see ext.pageReader.piper, lazily loaded) needs both a WASM
+	// runtime and a real AudioContext to synthesize and play audio; a
+	// browser lacking either can never use it. Checked before the opt-in
+	// UI is even shown, so a reader never opts in only to have it silently
+	// fail -- see the design spec section 8.
+	function piperCapable() {
+		return typeof window.WebAssembly !== 'undefined' &&
+			!!( window.AudioContext || window.webkitAudioContext );
+	}
+
 	function getSkipSelectors() {
 		var configured = mw.config.get( 'wgPageReaderSkipSelectors' );
 		return Array.isArray( configured ) ? configured : [];
@@ -429,6 +439,57 @@
 			window.localStorage.setItem( VOICE_STORAGE_KEY, value );
 		} catch ( e ) {
 			// Ignored -- see readStoredGender().
+		}
+	}
+
+	// Whether the reader has opted into the client-side Piper voice (see
+	// docs/superpowers/specs/2026-09-16-piper-voice-option-design.md) or is
+	// using the browser's native speechSynthesis. Same degrade-never-break
+	// rule as readStoredGender()/writeStoredGender() above.
+	var ENGINE_VALUES = [ 'native', 'piper' ];
+	var ENGINE_STORAGE_KEY = 'pagereader-engine';
+	var PIPER_FAILURE_STORAGE_KEY = 'pagereader-piper-failures';
+
+	function isValidEngine( value ) {
+		return ENGINE_VALUES.indexOf( value ) !== -1;
+	}
+
+	function readStoredEngine() {
+		try {
+			var stored = window.localStorage.getItem( ENGINE_STORAGE_KEY );
+			return isValidEngine( stored ) ? stored : 'native';
+		} catch ( e ) {
+			return 'native';
+		}
+	}
+
+	function writeStoredEngine( value ) {
+		try {
+			window.localStorage.setItem( ENGINE_STORAGE_KEY, value );
+		} catch ( e ) {
+			// Ignored -- see readStoredEngine().
+		}
+	}
+
+	// Tracks consecutive Piper failures across separate reads (not just
+	// within one), so a persistently broken CDN/model eventually falls back
+	// to asking the reader to opt in again rather than silently retrying a
+	// dead path forever (see the design spec section 8). Reset to 0 on any
+	// successful Piper read.
+	function readPiperFailureCount() {
+		try {
+			var stored = parseInt( window.localStorage.getItem( PIPER_FAILURE_STORAGE_KEY ), 10 );
+			return isNaN( stored ) || stored < 0 ? 0 : stored;
+		} catch ( e ) {
+			return 0;
+		}
+	}
+
+	function writePiperFailureCount( value ) {
+		try {
+			window.localStorage.setItem( PIPER_FAILURE_STORAGE_KEY, String( value ) );
+		} catch ( e ) {
+			// Ignored -- see readStoredEngine().
 		}
 	}
 
@@ -1111,6 +1172,19 @@
 			}
 		}
 	}
+
+	// Exposed so the lazily-loaded ext.pageReader.piper module (see
+	// docs/superpowers/specs/2026-09-16-piper-voice-option-design.md) can
+	// reuse this file's own sentence-splitting and highlighting logic
+	// instead of duplicating it -- keeping both engines' idea of "what
+	// counts as a sentence" and "how it's highlighted" identical. A plain
+	// object on mw, not a ResourceLoader dependency, since the Piper module
+	// is requested lazily, long after this module has already run.
+	mw.pageReader = mw.pageReader || {};
+	mw.pageReader.buildSpeechModel = buildSpeechModel;
+	mw.pageReader.splitIntoSentences = splitIntoSentences;
+	mw.pageReader.highlightChunk = highlightChunk;
+	mw.pageReader.clearHighlight = clearHighlight;
 
 	try {
 		if ( typeof mw !== 'undefined' && mw.hook ) {

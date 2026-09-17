@@ -90,6 +90,7 @@ class Hooks implements BeforePageDisplayHook, GetDoubleUnderscoreIDsHook {
 			'wgPageReaderVoiceGender' => $effective['voiceGender'],
 			'wgPageReaderHighlightEnabled' => $highlightEnabled,
 			'wgPageReaderPreferredVoices' => $effective['preferredVoices'],
+			'wgPageReaderPiperEnabled' => $effective['piperEnabled'],
 		] );
 	}
 }
