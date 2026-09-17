@@ -1235,6 +1235,7 @@ test( 'the 3rd consecutive Piper failure clears the engine preference back to na
 	);
 	const state = installPiperMock( window );
 	const button = window.document.querySelector( '.pagereader-button' );
+	const optIn = window.document.querySelector( '.pagereader-piper-optin' );
 
 	for ( let i = 0; i < 3; i++ ) {
 		button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) ); // start a fresh read
@@ -1252,6 +1253,40 @@ test( 'the 3rd consecutive Piper failure clears the engine preference back to na
 
 	assert.strictEqual( window.localStorage.getItem( 'pagereader-engine' ), 'native' );
 	assert.strictEqual( window.localStorage.getItem( 'pagereader-piper-failures' ), '0' );
+	// Regression check: the stored preference reverting to native is not
+	// enough on its own -- the opt-in control itself must also drop out of
+	// its "active" state, or a reader would see it still claiming to be
+	// using the better voice when a fresh click would actually use native.
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'default' );
+	assert.strictEqual( optIn.textContent, 'Try a better voice' );
+} );
+
+test( 'the Piper engine speaks the whole article as one chunk with no highlighting when highlightEnabled is false', async function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>',
+		{ wgPageReaderPiperEnabled: true, wgPageReaderHighlightEnabled: false }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const button = window.document.querySelector( '.pagereader-button' );
+
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await flushAsync();
+
+	assert.strictEqual( state.speakCalls.length, 1 );
+	assert.strictEqual(
+		state.speakCalls[ 0 ].sentenceList.length, 1,
+		'the whole article must be a single chunk, not re-split into sentences, when highlighting is disabled'
+	);
+	assert.strictEqual(
+		state.speakCalls[ 0 ].sentenceList[ 0 ].text, 'Hello there. Saint today lived well.'
+	);
+
+	// Even if the Piper module fires onSentenceStart for this chunk, it
+	// must not highlight anything -- matching speakWholeArticle()'s own
+	// no-highlighting behavior on the native path for the same config.
+	state.speakCalls[ 0 ].callbacks.onSentenceStart( state.speakCalls[ 0 ].sentenceList[ 0 ] );
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 0 );
 } );
 
 test( 'a success after failures resets the failure count to 0', async function () {

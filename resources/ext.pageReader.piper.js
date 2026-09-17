@@ -10,7 +10,16 @@
 ( function () {
 	'use strict';
 
-	var PIPER_CDN_URL = 'https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.5/dist/piper-tts-web.js';
+	// The plain `dist/piper-tts-web.js` build (an earlier version of this
+	// file used it) contains `await import("onnxruntime-web/wasm")` -- a
+	// bare module specifier that only resolves inside a bundler, never in
+	// a browser's native import(). jsdelivr's `+esm` transform rewrites
+	// every such specifier (this package's own and its onnxruntime-web
+	// dependency's) into fully-resolved jsdelivr URLs, producing a build
+	// that's actually loadable via a plain dynamic import() with no
+	// import map. Confirmed by fetching this exact URL and inspecting the
+	// rewritten output directly.
+	var PIPER_CDN_URL = 'https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.5/+esm';
 	var VOICE_ID = 'en_US-amy-medium';
 
 	var libraryPromise = null;
@@ -46,9 +55,30 @@
 	// queue to fight with here, so the cancel()-cascade class of bug
 	// #14 fixed for the native engine cannot happen in this
 	// implementation at all.
+	//
+	// `paused` is tracked explicitly (not inferred from currentAudio)
+	// because a pause/resume click can land while a sentence is still
+	// being synthesized -- i.e. before any <audio> element exists yet.
+	// Without this flag, that click would silently do nothing and the
+	// next sentence would start playing regardless of the reader's
+	// request the moment its synthesis finished.
 	function speak( sentenceList, callbacks ) {
 		var cancelled = false;
+		var paused = false;
 		var currentAudio = null;
+
+		function playCurrentAudio() {
+			currentAudio.play().catch( function () {
+				// HTMLMediaElement.play()'s returned promise rejects on
+				// failures the 'error' event does not cover (e.g. an
+				// autoplay-policy block) -- without this .catch(), such a
+				// rejection would be an unhandled promise rejection and
+				// the caller would never learn playback actually failed.
+				if ( !cancelled ) {
+					callbacks.onError();
+				}
+			} );
+		}
 
 		function playIndex( index ) {
 			if ( cancelled ) {
@@ -81,7 +111,13 @@
 						callbacks.onError();
 					}
 				} );
-				currentAudio.play();
+				if ( paused ) {
+					// The reader paused while this sentence was still
+					// synthesizing -- leave it loaded but unplayed; resume()
+					// below calls .play() on it once clicked.
+					return;
+				}
+				playCurrentAudio();
 			} ).catch( function () {
 				if ( !cancelled ) {
 					callbacks.onError();
@@ -99,13 +135,15 @@
 				}
 			},
 			pause: function () {
+				paused = true;
 				if ( currentAudio ) {
 					currentAudio.pause();
 				}
 			},
 			resume: function () {
+				paused = false;
 				if ( currentAudio ) {
-					currentAudio.play();
+					playCurrentAudio();
 				}
 			}
 		};
