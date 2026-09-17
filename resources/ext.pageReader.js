@@ -806,6 +806,19 @@
 						if ( failures >= 3 ) {
 							writeStoredEngine( 'native' );
 							writePiperFailureCount( 0 );
+							// piperOptIn is found once, synchronously, near the
+							// end of bindButton() -- by the time any click (and
+							// so any read, and so any failure) can happen, it's
+							// already been assigned. Without updating its
+							// visible state here too, the control would keep
+							// showing "active" until the next page load even
+							// though the stored preference (and thus what a
+							// fresh click actually does) has already reverted
+							// to native -- contradicting DEPLOY.md's own smoke
+							// checklist for this exact scenario.
+							if ( piperOptIn ) {
+								setPiperOptInState( piperOptIn, 'default' );
+							}
 						}
 						piperController = null;
 						if ( sentenceList.length ) {
@@ -822,6 +835,17 @@
 						piperController = window.pageReaderPiper.speak( sentenceList, {
 							onSentenceStart: function ( sentence ) {
 								if ( myGeneration !== speechGeneration ) {
+									return;
+								}
+								// highlightEnabled already folds together the
+								// site config and the per-page
+								// __NOPAGEREADERHIGHLIGHT__ opt-out (see
+								// Hooks.php) -- when it's off, sentenceList is
+								// the single whole-article chunk built above,
+								// and it must never be highlighted, the same
+								// way speakWholeArticle() never highlights
+								// anything on the native path.
+								if ( !highlightEnabled ) {
 									return;
 								}
 								currentHighlight = clearHighlight( currentHighlight );
@@ -1006,7 +1030,18 @@
 				}
 
 				if ( readStoredEngine() === 'piper' && piperCapable() && mw.config.get( 'wgPageReaderPiperEnabled' ) ) {
-					speakWithPiper( sentences.length ? sentences : splitIntoSentences( model.text ), myGeneration );
+					// Respect wgPageReaderHighlightEnabled (itself already
+					// folded together with the per-page __NOPAGEREADERHIGHLIGHT__
+					// opt-out in Hooks.php) the same way the native path's own
+					// speakWholeArticle()/speakSentences() split does: when
+					// highlighting is off, speak the whole article as a single
+					// chunk with no per-sentence highlight callbacks, rather
+					// than silently re-splitting into sentences regardless of
+					// this config, which would highlight every one of them.
+					var piperSentenceList = highlightEnabled ?
+						sentences :
+						[ { text: model.text, start: 0, end: model.text.length } ];
+					speakWithPiper( piperSentenceList, myGeneration );
 				} else if ( sentences.length ) {
 					speakSentences( sentences, 0, -1 );
 				} else {
