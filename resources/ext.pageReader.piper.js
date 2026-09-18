@@ -78,6 +78,12 @@
 		var cancelled = false;
 		var paused = false;
 		var currentAudio = null;
+		// The blob: URL currently backing currentAudio -- tracked
+		// separately so it can be revoked from cancel() too (a mid-play
+		// stop calls currentAudio.pause(), which fires neither 'ended'
+		// nor 'error', so those two listeners alone would never release
+		// it for that case).
+		var currentObjectUrl = null;
 		// Index -> in-flight/resolved predict() promise. Without this,
 		// synthesis for a sentence only ever started after the previous
 		// sentence's audio finished playing ('ended'), leaving an audible
@@ -99,8 +105,27 @@
 				predictions[ index ] = loadLibrary().then( function ( piperTts ) {
 					return piperTts.predict( { text: sentenceList[ index ].text, voiceId: VOICE_ID } );
 				} );
+				// The one-ahead prefetch call below never attaches its own
+				// handler to this promise (see playIndex()) -- if the
+				// reader stops the read before playIndex() ever reaches
+				// this index to attach its real .catch(), a later
+				// rejection here would otherwise be a genuine unhandled
+				// promise rejection. This no-op catch only ensures some
+				// handler always exists; it doesn't call onError() itself
+				// -- playIndex()'s own .then()/.catch() on this same
+				// memoized promise still does that normally for an active
+				// read, since multiple handlers on one promise all fire
+				// independently.
+				predictions[ index ].catch( function () {} );
 			}
 			return predictions[ index ];
+		}
+
+		function releaseCurrentAudio() {
+			if ( currentObjectUrl ) {
+				URL.revokeObjectURL( currentObjectUrl );
+				currentObjectUrl = null;
+			}
 		}
 
 		function playCurrentAudio() {
@@ -133,25 +158,45 @@
 				return;
 			}
 			var sentence = sentenceList[ index ];
-			// Kick off the NEXT sentence's synthesis now, in parallel with
-			// this one -- see predictions' declaration above.
+			// Call predictSentence( index ) -- registering ITS .then() --
+			// before predictSentence( index + 1 ), not after: loadLibrary()
+			// returns the same already-resolved, memoized promise for
+			// every sentence, and Promise callbacks on one promise fire in
+			// the order they were attached. Prefetching index + 1 first
+			// would queue ITS predict() call ahead of the current
+			// sentence's, so time-to-first-audio would become
+			// T(next)+T(current) instead of T(current) -- the opposite of
+			// this function's purpose. Calling index first, then index + 1
+			// right behind it, means the lookahead's inference genuinely
+			// overlaps with the current sentence's playback instead of
+			// delaying it.
+			var currentPrediction = predictSentence( index );
 			predictSentence( index + 1 );
-			predictSentence( index ).then( function ( wavBlob ) {
+			currentPrediction.then( function ( wavBlob ) {
 				if ( cancelled ) {
 					return;
 				}
-				currentAudio = new window.Audio( URL.createObjectURL( wavBlob ) );
+				// Consumed -- free the resolved blob now rather than
+				// holding every sentence's decoded audio for the rest of
+				// the read (there is no seek/rewind, so nothing past this
+				// point ever needs it again). Only the index + 1 lookahead
+				// prefetched above stays in the map.
+				delete predictions[ index ];
+				currentObjectUrl = URL.createObjectURL( wavBlob );
+				currentAudio = new window.Audio( currentObjectUrl );
 				currentAudio.addEventListener( 'play', function () {
 					if ( !cancelled ) {
 						callbacks.onSentenceStart( sentence );
 					}
 				} );
 				currentAudio.addEventListener( 'ended', function () {
+					releaseCurrentAudio();
 					if ( !cancelled ) {
 						playIndex( index + 1 );
 					}
 				} );
 				currentAudio.addEventListener( 'error', function () {
+					releaseCurrentAudio();
 					if ( !cancelled ) {
 						callbacks.onError();
 					}
@@ -178,6 +223,10 @@
 				if ( currentAudio ) {
 					currentAudio.pause();
 				}
+				// A mid-play stop fires neither 'ended' nor 'error' on
+				// currentAudio, so this is the only place that releases
+				// the object URL for a sentence stopped while playing.
+				releaseCurrentAudio();
 			},
 			pause: function () {
 				paused = true;
