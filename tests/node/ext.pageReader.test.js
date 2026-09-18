@@ -1071,25 +1071,59 @@ test( 'the voice select defaults to Amy when the reader already opted in', funct
 	assert.strictEqual( select.value, 'piper-amy' );
 } );
 
-test( 'picking Amy for the first time shows the inline warning without downloading', function () {
+test( 'a first-ever visit recommends Amy by default, with the warning already shown', function () {
 	const { window } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
 		{ wgPageReaderPiperEnabled: true }, null, null, null, null, null, true
+		// No seeded localStorage at all -- a genuinely first-ever visit.
 	);
 	const state = installPiperMock( window );
 	const select = window.document.querySelector( '.pagereader-voice-select' );
 	const warning = window.document.querySelector( '.pagereader-piper-warning' );
-	assert.strictEqual( warning.hidden, true, 'the warning must start hidden' );
+
+	assert.strictEqual( select.value, 'piper-amy', 'Amy should be pre-selected as the recommended voice' );
+	assert.strictEqual( warning.hidden, false, 'the warning must be visible immediately, not just after a change event' );
+	assert.strictEqual( warning.getAttribute( 'data-pagereader-piper-warning-state' ), 'confirm' );
+	assert.strictEqual(
+		warning.querySelector( '.pagereader-piper-warning-text' ).textContent,
+		"Amy's voice sounds more natural, but needs to download about 60MB first."
+	);
+	assert.strictEqual( state.downloadCalls, 0, 'recommending Amy must not start a download by itself' );
+	assert.strictEqual(
+		window.localStorage.getItem( 'pagereader-engine' ), null,
+		'pre-selecting the option must not itself activate Piper -- only actually downloading does'
+	);
+} );
+
+test( 'a reader who previously picked a native gender is not overridden back to Amy', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-voice-gender': 'male' }, null, null, true
+	);
+	const select = window.document.querySelector( '.pagereader-voice-select' );
+	const warning = window.document.querySelector( '.pagereader-piper-warning' );
+
+	assert.strictEqual( select.value, 'male' );
+	assert.strictEqual( warning.hidden, true );
+} );
+
+test( 'picking Amy explicitly still shows the inline warning without downloading', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-voice-gender': 'male' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const select = window.document.querySelector( '.pagereader-voice-select' );
+	const warning = window.document.querySelector( '.pagereader-piper-warning' );
+	assert.strictEqual( warning.hidden, true, 'the warning must start hidden for a reader with an existing gender preference' );
 
 	select.value = 'piper-amy';
 	select.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
 
 	assert.strictEqual( warning.hidden, false );
 	assert.strictEqual( warning.getAttribute( 'data-pagereader-piper-warning-state' ), 'confirm' );
-	assert.strictEqual(
-		warning.querySelector( '.pagereader-piper-warning-text' ).textContent,
-		"Amy's voice sounds more natural, but needs to download about 60MB first."
-	);
 	assert.strictEqual( state.downloadCalls, 0, 'picking the option must not start a download yet' );
 } );
 

@@ -651,11 +651,27 @@
 			select.appendChild( piperOption );
 		}
 
-		select.value = ( piperSupported && readStoredEngine() === 'piper' ) ?
+		var alreadyPiperActive = piperSupported && readStoredEngine() === 'piper';
+		// Recommends Amy by default, but only for a reader who has never
+		// expressed ANY preference at all -- readStoredGender() returning
+		// null is what distinguishes a genuinely first-ever visit from one
+		// where the reader explicitly picked a native gender in the past
+		// (which must stick, not get silently overridden). Pre-selecting
+		// the option alone would not be enough on its own: without also
+		// showing the warning immediately below, the select would visibly
+		// claim "Amy" while readStoredEngine() is still 'native' --
+		// clicking the main button would then silently speak in the
+		// native voice with no explanation at all.
+		var recommendPiperByDefault = piperSupported && !alreadyPiperActive && readStoredGender() === null;
+
+		select.value = ( alreadyPiperActive || recommendPiperByDefault ) ?
 			PIPER_VOICE_OPTION_VALUE :
 			defaultGenderValue();
 
 		var warning = piperSupported ? createPiperWarning() : null;
+		if ( warning && recommendPiperByDefault ) {
+			setPiperWarningState( warning, 'confirm' );
+		}
 
 		select.addEventListener( 'change', function () {
 			if ( warning && select.value === PIPER_VOICE_OPTION_VALUE ) {

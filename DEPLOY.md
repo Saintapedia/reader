@@ -106,12 +106,18 @@ Readers can opt into a higher-quality, client-side neural voice
 ("Amy," `en_US-amy-medium` from the open-source [Piper](https://github.com/rhasspy/piper)
 project) as a 4th option in the same voice select used for
 Female/Male/Auto, on any browser with WebAssembly and AudioContext
-support. Picking "Amy" for the first time shows an inline warning
-("about 60MB to download") with its own Download button rather than
+support. A genuinely first-ever visit (no stored gender preference at
+all) recommends Amy by default — she's pre-selected in the dropdown
+with the size-warning box already showing — but this only pre-selects
+the option; nothing downloads or activates until the reader clicks
+Download. A reader who has already picked a native gender in the past
+is never overridden back to Amy. Picking "Amy" any other time shows
+the same inline warning with its own Download button rather than
 downloading immediately; once downloaded, the model (~60MB) is cached
-by the browser and picking "Amy" again on a later visit switches
-straight over with no re-prompt. No text is ever sent to a third
-party, and nothing downloads until the reader explicitly confirms.
+by the browser and picking "Amy" again — even after switching to a
+native voice in between — switches straight over with no re-prompt.
+No text is ever sent to a third party, and nothing downloads until the
+reader explicitly confirms.
 
 The small `@mintplex-labs/piper-tts-web` wrapper library itself is
 vendored locally at `resources/vendor/piper-tts-web.esm.js` (a
@@ -237,6 +243,8 @@ by writing `{{ReadAloudNoHighlight}}` instead of the raw magic word.
 | Set `$wgPageReaderHighlightEnabled = false;` | Whole article is spoken as one utterance with no highlighting (kill switch) |
 | On a WASM/AudioContext-capable browser with `$wgPageReaderPiperEnabled` true | The voice select has a 4th option, "Amy (better voice)" |
 | Set `$wgPageReaderPiperEnabled = false;` | The 4th option does not appear |
+| Load the page with no prior localStorage at all (private window, or clear site data) | The select is pre-selected to "Amy (better voice)" and the size-warning box is already visible; nothing has downloaded yet |
+| Pick "Female"/"Male"/"Auto" first, reload, confirm the choice persisted | The select is not overridden back to Amy on a later visit |
 | Pick "Amy (better voice)" from the select for the first time | An inline warning appears below the select ("about 60MB to download") with a Download button; nothing downloads yet |
 | Click Download | Downloads Amy's voice model with visible progress text, then the warning hides |
 | Click "Read this page aloud" after downloading | Reads with Amy's voice; sentence highlighting stays in sync |
