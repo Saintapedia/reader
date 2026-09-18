@@ -613,10 +613,15 @@ test( 'out-of-range pitch/rate config values are clamped client-side', function 
 const FIREFOX_LINUX_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0';
 const FIREFOX_WINDOWS_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0';
 
-test( 'Firefox on Linux gets the browser default pitch/rate (1/1) regardless of config', function () {
+test( 'Firefox on Linux never has pitch/rate assigned at all, regardless of config', function () {
 	// Works around a Firefox/Linux (speech-dispatcher + espeak-ng) bug
-	// where a non-default pitch/rate produces badly garbled audio; a
-	// default-pitch/rate utterance on the same backend is unaffected.
+	// where the garbling reproduced identically whether pitch/rate were
+	// tuned to a non-default value OR explicitly assigned their own
+	// numeric defaults (1/1) -- only an utterance whose pitch/rate were
+	// never touched at all came out clean. So the fix is to skip the
+	// assignment entirely, not to assign a default-equivalent value:
+	// this asserts the properties are left `undefined` (never set), not
+	// merely equal to 1.
 	const { window, speechState } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
 		{ wgPageReaderVoicePitch: 1.3, wgPageReaderVoiceRate: 0.9 },
@@ -625,8 +630,14 @@ test( 'Firefox on Linux gets the browser default pitch/rate (1/1) regardless of 
 	window.document.querySelector( '.pagereader-button' )
 		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 
-	assert.strictEqual( speechState.utterances[ 0 ].pitch, 1, 'Firefox/Linux must ignore the configured pitch tuning' );
-	assert.strictEqual( speechState.utterances[ 0 ].rate, 1, 'Firefox/Linux must ignore the configured rate tuning' );
+	assert.strictEqual(
+		speechState.utterances[ 0 ].pitch, undefined,
+		'Firefox/Linux must never assign pitch at all, not even a default-equivalent value'
+	);
+	assert.strictEqual(
+		speechState.utterances[ 0 ].rate, undefined,
+		'Firefox/Linux must never assign rate at all, not even a default-equivalent value'
+	);
 } );
 
 test( 'Firefox on Linux still applies voice-gender selection despite skipping pitch/rate tuning', function () {
@@ -643,7 +654,7 @@ test( 'Firefox on Linux still applies voice-gender selection despite skipping pi
 		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 
 	assert.strictEqual( speechState.utterances[ 0 ].voice.name, 'Google UK English Female' );
-	assert.strictEqual( speechState.utterances[ 0 ].pitch, 1 );
+	assert.strictEqual( speechState.utterances[ 0 ].pitch, undefined );
 } );
 
 test( 'Firefox on Windows is unaffected -- the workaround is scoped to Linux, not Firefox generally', function () {
