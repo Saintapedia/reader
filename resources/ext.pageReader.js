@@ -147,7 +147,7 @@
 			'pagereader-voice-select',
 			'pagereader-visually-hidden',
 			'pagereader-pause-button',
-			'pagereader-piper-optin'
+			'pagereader-piper-warning'
 		];
 		return function ( textNode ) {
 			if ( isInsideAnySkipRange( textNode, skipRanges ) ) {
@@ -419,6 +419,12 @@
 	var VOICE_GENDER_VALUES = [ 'female', 'male', 'auto' ];
 	var VOICE_STORAGE_KEY = 'pagereader-voice-gender';
 
+	// The voice-select option value that means "use the Piper engine"
+	// (see createControls()) -- distinct from any real gender value so it
+	// can never collide with a sysop-configured default or a stored
+	// preference.
+	var PIPER_VOICE_OPTION_VALUE = 'piper-amy';
+
 	function isValidGender( value ) {
 		return VOICE_GENDER_VALUES.indexOf( value ) !== -1;
 	}
@@ -441,6 +447,19 @@
 		} catch ( e ) {
 			// Ignored -- see readStoredGender().
 		}
+	}
+
+	// "Whatever native gender the reader would get if they weren't using
+	// Piper right now" -- shared by createControls() (the select's initial
+	// value) and fallBackToNative() (resetting the select after 3
+	// consecutive Piper failures). Independent of whether the select is
+	// currently showing the Piper option: picking "Amy" from the select
+	// never overwrites VOICE_STORAGE_KEY (see createControls()'s change
+	// handler), so the reader's last real gender choice survives underneath
+	// it the whole time Piper is active.
+	function defaultGenderValue() {
+		var configuredDefault = mw.config.get( 'wgPageReaderVoiceGender' );
+		return readStoredGender() || ( isValidGender( configuredDefault ) ? configuredDefault : 'auto' );
 	}
 
 	// Whether the reader has opted into the client-side Piper voice (see
@@ -494,6 +513,40 @@
 		}
 	}
 
+	// Whether the reader has ever successfully downloaded Amy's voice on
+	// this device -- deliberately separate from ENGINE_STORAGE_KEY (which
+	// only tracks which engine is active RIGHT NOW). Picking a native
+	// gender from the select reverts the engine to 'native' (see
+	// createControls()'s change handler), and merging Amy into that same
+	// select means there's no way to have "gender=male" and "Piper
+	// active" at once -- but the ~60MB model itself is still sitting in
+	// the browser's own storage the whole time. Without this separate
+	// flag, switching away and back to Amy within one visit would show
+	// the size-warning-and-download step all over again, even though
+	// nothing actually needs downloading -- contradicting the reason
+	// Piper was merged into the select in the first place. Deliberately
+	// NOT cleared by the 3-consecutive-failures fallback (see
+	// fallBackToNative()): those failures are about synthesis, not
+	// whether the model file is present, so forcing a redundant
+	// re-download would not fix anything.
+	var PIPER_DOWNLOADED_STORAGE_KEY = 'pagereader-piper-downloaded';
+
+	function readPiperDownloaded() {
+		try {
+			return window.localStorage.getItem( PIPER_DOWNLOADED_STORAGE_KEY ) === '1';
+		} catch ( e ) {
+			return false;
+		}
+	}
+
+	function writePiperDownloaded( value ) {
+		try {
+			window.localStorage.setItem( PIPER_DOWNLOADED_STORAGE_KEY, value ? '1' : '0' );
+		} catch ( e ) {
+			// Ignored -- see readStoredEngine().
+		}
+	}
+
 	function pauseSupported() {
 		return !!( window.speechSynthesis &&
 			typeof window.speechSynthesis.pause === 'function' &&
@@ -516,38 +569,59 @@
 		return pauseButton;
 	}
 
-	// One persistent button cycling through 4 states, rather than a
-	// separate confirm popover -- matches this file's existing style of a
-	// single element whose label/state changes (see the pause button
-	// above) instead of introducing new hidden/shown DOM structure.
-	function createPiperOptIn() {
+	// Shown inline under the voice select (see createControls()) when the
+	// reader picks the Piper option but hasn't downloaded it yet -- keeps
+	// the original design's explicit size-consent step without a separate
+	// opt-in control or a blocking native confirm() dialog. Not created at
+	// all when Piper isn't offered (mirrors the old opt-in button's own
+	// gating).
+	function createPiperWarning() {
 		if ( !mw.config.get( 'wgPageReaderPiperEnabled' ) || !piperCapable() ) {
 			return null;
 		}
-		var optIn = document.createElement( 'button' );
-		optIn.setAttribute( 'type', 'button' );
-		optIn.className = 'pagereader-piper-optin';
-		return optIn;
+		var warning = document.createElement( 'div' );
+		warning.className = 'pagereader-piper-warning';
+		warning.hidden = true;
+
+		var text = document.createElement( 'span' );
+		text.className = 'pagereader-piper-warning-text';
+		warning.appendChild( text );
+
+		var downloadButton = document.createElement( 'button' );
+		downloadButton.setAttribute( 'type', 'button' );
+		downloadButton.className = 'pagereader-piper-download-button';
+		downloadButton.textContent = mw.msg( 'pagereader-piper-download-button' );
+		warning.appendChild( downloadButton );
+
+		return warning;
 	}
 
-	function setPiperOptInState( optIn, state ) {
-		optIn.setAttribute( 'data-pagereader-piper-state', state );
-		optIn.disabled = state === 'downloading';
-		if ( state === 'confirm' ) {
-			optIn.textContent = mw.msg( 'pagereader-piper-optin-confirm' );
-		} else if ( state === 'downloading' ) {
-			optIn.textContent = mw.msg( 'pagereader-piper-downloading' );
-		} else if ( state === 'active' ) {
-			optIn.textContent = mw.msg( 'pagereader-piper-active' );
-		} else {
-			optIn.textContent = mw.msg( 'pagereader-piper-optin-label' );
+	// 'hidden': not shown at all (the default, and where this returns to
+	// once a download succeeds or fails). 'confirm': the reader just picked
+	// the Piper option and hasn't downloaded it yet -- shows the size
+	// warning and an enabled Download button. 'downloading': the Download
+	// button was clicked -- shows live progress text (see createControls()'s
+	// download click handler) and disables the button so a reader can't
+	// start a second concurrent download.
+	function setPiperWarningState( warning, state ) {
+		warning.setAttribute( 'data-pagereader-piper-warning-state', state );
+		if ( state === 'hidden' ) {
+			warning.hidden = true;
+			return;
 		}
+		warning.hidden = false;
+		var text = warning.querySelector( '.pagereader-piper-warning-text' );
+		var downloadButton = warning.querySelector( '.pagereader-piper-download-button' );
+		downloadButton.disabled = state === 'downloading';
+		text.textContent = state === 'downloading' ?
+			mw.msg( 'pagereader-piper-downloading' ) :
+			mw.msg( 'pagereader-piper-warning-text' );
 	}
 
-	// Inserted as the button's next siblings (select, label, then the
-	// optional pause button) so a later click handler can find each one via
-	// a bounded walk from the button, without needing to track a separate
-	// reference. Order relative to the button doesn't affect the
+	// Inserted as the button's next siblings (select, label, warning, then
+	// the optional pause button) so a later click handler can find each one
+	// via a bounded walk from the button, without needing to track a
+	// separate reference. Order relative to the button doesn't affect the
 	// label/select association, which is done by id, not DOM position.
 	function createControls() {
 		var fragment = document.createDocumentFragment();
@@ -564,12 +638,52 @@
 			select.appendChild( option );
 		} );
 
-		var configuredDefault = mw.config.get( 'wgPageReaderVoiceGender' );
-		select.value = readStoredGender() ||
-			( isValidGender( configuredDefault ) ? configuredDefault : 'auto' );
+		// Piper is offered as a 4th option in the SAME select, not a
+		// separate control, so a reader just picks "a voice" without
+		// needing to understand there are two different underlying
+		// engines. The select's own change handler below is what actually
+		// drives the opt-in/download/switch-back logic.
+		var piperSupported = mw.config.get( 'wgPageReaderPiperEnabled' ) && piperCapable();
+		if ( piperSupported ) {
+			var piperOption = document.createElement( 'option' );
+			piperOption.value = PIPER_VOICE_OPTION_VALUE;
+			piperOption.textContent = mw.msg( 'pagereader-voice-piper' );
+			select.appendChild( piperOption );
+		}
+
+		select.value = ( piperSupported && readStoredEngine() === 'piper' ) ?
+			PIPER_VOICE_OPTION_VALUE :
+			defaultGenderValue();
+
+		var warning = piperSupported ? createPiperWarning() : null;
 
 		select.addEventListener( 'change', function () {
+			if ( warning && select.value === PIPER_VOICE_OPTION_VALUE ) {
+				if ( readPiperDownloaded() ) {
+					// Already downloaded (this visit or an earlier one) --
+					// nothing left to confirm, so switch immediately with
+					// no warning step, even if the reader had switched to a
+					// native gender in between (see PIPER_DOWNLOADED_STORAGE_KEY's
+					// own comment for why this is a separate flag from
+					// ENGINE_STORAGE_KEY).
+					writeStoredEngine( 'piper' );
+					setPiperWarningState( warning, 'hidden' );
+					return;
+				}
+				setPiperWarningState( warning, 'confirm' );
+				return;
+			}
+			// A real gender value was picked (including switching away
+			// from Piper back to native) -- VOICE_STORAGE_KEY deliberately
+			// never gets written from the Piper branch above, so this is
+			// the only place it changes, and defaultGenderValue() always
+			// reflects the reader's real preference even while Piper is
+			// active (see that function's own comment).
 			writeStoredGender( select.value );
+			writeStoredEngine( 'native' );
+			if ( warning ) {
+				setPiperWarningState( warning, 'hidden' );
+			}
 		} );
 
 		var label = document.createElement( 'label' );
@@ -580,10 +694,43 @@
 		fragment.appendChild( select );
 		fragment.appendChild( label );
 
-		var piperOptIn = createPiperOptIn();
-		if ( piperOptIn ) {
-			setPiperOptInState( piperOptIn, readStoredEngine() === 'piper' ? 'active' : 'default' );
-			fragment.appendChild( piperOptIn );
+		if ( warning ) {
+			var downloadButton = warning.querySelector( '.pagereader-piper-download-button' );
+			downloadButton.addEventListener( 'click', function () {
+				try {
+					setPiperWarningState( warning, 'downloading' );
+					var text = warning.querySelector( '.pagereader-piper-warning-text' );
+					mw.loader.using( 'ext.pageReader.piper' ).then( function () {
+						return window.pageReaderPiper.download( function ( progress ) {
+							if ( progress && progress.total ) {
+								text.textContent = mw.msg( 'pagereader-piper-downloading' ) +
+									' ' + Math.round( progress.loaded * 100 / progress.total ) + '%';
+							}
+						} );
+					} ).then( function () {
+						writeStoredEngine( 'piper' );
+						writePiperDownloaded( true );
+						writePiperFailureCount( 0 );
+						setPiperWarningState( warning, 'hidden' );
+					} ).catch( function () {
+						// Download failed -- the select must not keep
+						// showing "Amy" as if the switch had actually
+						// happened, since readStoredEngine() is still
+						// 'native' and a fresh click of the main button
+						// would use the native voice regardless.
+						select.value = defaultGenderValue();
+						setPiperWarningState( warning, 'hidden' );
+						if ( window.console && console.warn ) {
+							console.warn( 'PageReader: Piper download failed' );
+						}
+					} );
+				} catch ( e ) {
+					if ( window.console && console.warn ) {
+						console.warn( 'PageReader failed', e );
+					}
+				}
+			} );
+			fragment.appendChild( warning );
 		}
 
 		var pauseButton = createPauseButton();
@@ -615,10 +762,6 @@
 
 	function findPauseButton( button ) {
 		return findFollowingSibling( button, 'pagereader-pause-button' );
-	}
-
-	function findPiperOptIn( button ) {
-		return findFollowingSibling( button, 'pagereader-piper-optin' );
 	}
 
 	function bindButton( button, contentRoot, skipRanges ) {
@@ -726,7 +869,15 @@
 				var pitch = clampNumber( mw.config.get( 'wgPageReaderVoicePitch' ), 0, 2, 1 );
 				var rate = clampNumber( mw.config.get( 'wgPageReaderVoiceRate' ), 0.1, 10, 1 );
 				var voiceSelect = findVoiceSelect( button );
-				var genderPreference = voiceSelect ? voiceSelect.value : mw.config.get( 'wgPageReaderVoiceGender' );
+				// The select can be showing PIPER_VOICE_OPTION_VALUE (not a
+				// real gender) while the Piper engine is active -- pickVoice()
+				// would just silently return null for that string, losing the
+				// reader's actual gender preference for a native fallback if
+				// Piper later fails. defaultGenderValue() reads the gender
+				// that's still stored underneath (see its own comment).
+				var genderPreference = ( voiceSelect && voiceSelect.value !== PIPER_VOICE_OPTION_VALUE ) ?
+					voiceSelect.value :
+					defaultGenderValue();
 				var voice = pickVoice( genderPreference );
 				var highlightEnabled = mw.config.get( 'wgPageReaderHighlightEnabled' );
 
@@ -801,8 +952,8 @@
 
 				// Requests the lazily-loaded Piper module (already cached on
 				// this device after the reader's opt-in -- see
-				// findPiperOptIn()'s click handler above) and speaks with
-				// it, falling back to the native engine entirely on any
+				// createControls()'s download click handler above) and speaks
+				// with it, falling back to the native engine entirely on any
 				// failure. Mirrors the native path's speechGeneration guard
 				// so a stale callback from an already-cancelled Piper read
 				// can't resurrect a UI state that's already moved on.
@@ -844,18 +995,19 @@
 						if ( failures >= 3 ) {
 							writeStoredEngine( 'native' );
 							writePiperFailureCount( 0 );
-							// piperOptIn is found once, synchronously, near the
-							// end of bindButton() -- by the time any click (and
-							// so any read, and so any failure) can happen, it's
-							// already been assigned. Without updating its
-							// visible state here too, the control would keep
-							// showing "active" until the next page load even
-							// though the stored preference (and thus what a
-							// fresh click actually does) has already reverted
-							// to native -- contradicting DEPLOY.md's own smoke
-							// checklist for this exact scenario.
-							if ( piperOptIn ) {
-								setPiperOptInState( piperOptIn, 'default' );
+							// voiceSelect is found once, synchronously, near
+							// the top of this click handler -- by the time any
+							// click (and so any read, and so any failure) can
+							// happen, it's already been assigned. Without
+							// resetting its displayed value here too, the
+							// select would keep showing "Amy" until the next
+							// page load even though the stored preference (and
+							// thus what a fresh click actually does) has
+							// already reverted to native -- contradicting
+							// DEPLOY.md's own smoke checklist for this exact
+							// scenario.
+							if ( voiceSelect ) {
+								voiceSelect.value = defaultGenderValue();
 							}
 						}
 						piperController = null;
@@ -1160,48 +1312,6 @@
 			} );
 		}
 
-		var piperOptIn = findPiperOptIn( button );
-		if ( piperOptIn ) {
-			piperOptIn.addEventListener( 'click', function () {
-				try {
-					var state = piperOptIn.getAttribute( 'data-pagereader-piper-state' );
-					if ( state === 'active' ) {
-						writeStoredEngine( 'native' );
-						setPiperOptInState( piperOptIn, 'default' );
-						return;
-					}
-					if ( state === 'default' ) {
-						setPiperOptInState( piperOptIn, 'confirm' );
-						return;
-					}
-					if ( state !== 'confirm' ) {
-						return;
-					}
-					setPiperOptInState( piperOptIn, 'downloading' );
-					mw.loader.using( 'ext.pageReader.piper' ).then( function () {
-						return window.pageReaderPiper.download( function ( progress ) {
-							if ( progress && progress.total ) {
-								piperOptIn.textContent = mw.msg( 'pagereader-piper-downloading' ) +
-									' ' + Math.round( progress.loaded * 100 / progress.total ) + '%';
-							}
-						} );
-					} ).then( function () {
-						writeStoredEngine( 'piper' );
-						writePiperFailureCount( 0 );
-						setPiperOptInState( piperOptIn, 'active' );
-					} ).catch( function () {
-						setPiperOptInState( piperOptIn, 'default' );
-						if ( window.console && console.warn ) {
-							console.warn( 'PageReader: Piper download failed' );
-						}
-					} );
-				} catch ( e ) {
-					if ( window.console && console.warn ) {
-						console.warn( 'PageReader failed', e );
-					}
-				}
-			} );
-		}
 	}
 
 	// Resolves what element to read, most specific signal first:

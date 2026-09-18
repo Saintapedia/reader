@@ -9,10 +9,10 @@
 	"pagereader-voice-auto": "Auto",
 	"pagereader-voice-female": "Female",
 	"pagereader-voice-male": "Male",
+	"pagereader-voice-piper": "Amy (better voice)",
 	"pagereader-pause-label": "Pause reading",
 	"pagereader-pause-label-resume": "Resume reading",
-	"pagereader-piper-optin-label": "Try a better voice",
-	"pagereader-piper-optin-confirm": "Download Amy's voice (~60MB)?",
-	"pagereader-piper-downloading": "Downloading voice…",
-	"pagereader-piper-active": "Using Amy's voice — tap to use default"
+	"pagereader-piper-warning-text": "Amy's voice sounds more natural, but needs to download about 60MB first.",
+	"pagereader-piper-download-button": "Download",
+	"pagereader-piper-downloading": "Downloading voice…"
 }

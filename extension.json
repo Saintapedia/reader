@@ -136,12 +136,12 @@
 				"pagereader-voice-auto",
 				"pagereader-voice-female",
 				"pagereader-voice-male",
+				"pagereader-voice-piper",
 				"pagereader-pause-label",
 				"pagereader-pause-label-resume",
-				"pagereader-piper-optin-label",
-				"pagereader-piper-optin-confirm",
-				"pagereader-piper-downloading",
-				"pagereader-piper-active"
+				"pagereader-piper-warning-text",
+				"pagereader-piper-download-button",
+				"pagereader-piper-downloading"
 			]
 		},
 		"ext.pageReader.piper": {

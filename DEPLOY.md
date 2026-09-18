@@ -104,11 +104,14 @@ wanted.
 
 Readers can opt into a higher-quality, client-side neural voice
 ("Amy," `en_US-amy-medium` from the open-source [Piper](https://github.com/rhasspy/piper)
-project) via a "Try a better voice" control next to the voice-gender
-select, on any browser with WebAssembly and AudioContext support. The
-voice model (~60MB) downloads once per device and is cached by the
-browser — no text is ever sent to a third party, and nothing downloads
-until the reader explicitly opts in.
+project) as a 4th option in the same voice select used for
+Female/Male/Auto, on any browser with WebAssembly and AudioContext
+support. Picking "Amy" for the first time shows an inline warning
+("about 60MB to download") with its own Download button rather than
+downloading immediately; once downloaded, the model (~60MB) is cached
+by the browser and picking "Amy" again on a later visit switches
+straight over with no re-prompt. No text is ever sent to a third
+party, and nothing downloads until the reader explicitly confirms.
 
 The small `@mintplex-labs/piper-tts-web` wrapper library itself is
 vendored locally at `resources/vendor/piper-tts-web.esm.js` (a
@@ -232,14 +235,16 @@ by writing `{{ReadAloudNoHighlight}}` instead of the raw magic word.
 | Click the button to start speech (multi-sentence article) | The current sentence highlights as it's spoken, moving sentence-by-sentence |
 | Click "Stop reading" mid-sentence | Speech and highlighting both stop immediately; the next sentence is never spoken |
 | Set `$wgPageReaderHighlightEnabled = false;` | Whole article is spoken as one utterance with no highlighting (kill switch) |
-| On a WASM/AudioContext-capable browser with `$wgPageReaderPiperEnabled` true | The "Try a better voice" control appears next to the voice select |
-| Set `$wgPageReaderPiperEnabled = false;` | The control does not appear |
-| Click "Try a better voice" once | Label changes to a download-size confirmation; nothing downloads yet |
-| Click it again | Downloads Amy's voice model with visible progress, then shows "Using Amy's voice — tap to use default" |
-| Click "Read this page aloud" after opting in | Reads with Amy's voice; sentence highlighting stays in sync |
+| On a WASM/AudioContext-capable browser with `$wgPageReaderPiperEnabled` true | The voice select has a 4th option, "Amy (better voice)" |
+| Set `$wgPageReaderPiperEnabled = false;` | The 4th option does not appear |
+| Pick "Amy (better voice)" from the select for the first time | An inline warning appears below the select ("about 60MB to download") with a Download button; nothing downloads yet |
+| Click Download | Downloads Amy's voice model with visible progress text, then the warning hides |
+| Click "Read this page aloud" after downloading | Reads with Amy's voice; sentence highlighting stays in sync |
 | Click "Stop reading" / the pause button while using Amy's voice | Both work identically to the native engine |
-| Block `cdn.jsdelivr.net` and click "Read this page aloud" after opting in | Falls back to the native voice for that read, no broken UI |
-| Force 3 consecutive Piper failures (e.g. with jsdelivr blocked) | Engine preference reverts to native; the opt-in control returns to its default (not "active") state |
+| Reload the page and pick "Amy (better voice)" again | Switches immediately with no warning/re-download, since the model is already cached |
+| Pick "Female"/"Male"/"Auto" while Amy is active, then switch back to "Amy (better voice)" | Still switches immediately (no re-download); the native gender choice is remembered underneath |
+| Block `cdn.jsdelivr.net` and click "Read this page aloud" with Amy active | Falls back to the native voice for that read, no broken UI |
+| Force 3 consecutive Piper failures (e.g. with jsdelivr blocked) | Engine preference reverts to native; the select's value reverts to the last native gender choice |
 
 ## Accessibility checklist
 
