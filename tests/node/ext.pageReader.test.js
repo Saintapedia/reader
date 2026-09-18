@@ -1095,6 +1095,22 @@ test( 'a first-ever visit recommends Amy by default, with the warning already sh
 	);
 } );
 
+test( 'a first-ever visit recommends Amy even when the site has configured a non-default gender', function () {
+	// Deliberate design choice, made explicit here: recommendPiperByDefault
+	// only checks whether the READER has ever expressed a preference
+	// (readStoredGender() === null), not what a sysop configured as the
+	// site-wide fallback gender -- $wgPageReaderVoiceGender was always a
+	// "what to use if the reader hasn't chosen for themselves" default,
+	// not a hard lock, and a sysop who doesn't want Amy recommended at
+	// all still has $wgPageReaderPiperEnabled = false for that.
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true, wgPageReaderVoiceGender: 'male' }, null, null, null, null, null, true
+	);
+	const select = window.document.querySelector( '.pagereader-voice-select' );
+	assert.strictEqual( select.value, 'piper-amy' );
+} );
+
 test( 'a reader who previously picked a native gender is not overridden back to Amy', function () {
 	const { window } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
