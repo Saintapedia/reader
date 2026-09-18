@@ -146,7 +146,8 @@
 			'pagereader-button',
 			'pagereader-voice-select',
 			'pagereader-visually-hidden',
-			'pagereader-pause-button'
+			'pagereader-pause-button',
+			'pagereader-piper-optin'
 		];
 		return function ( textNode ) {
 			if ( isInsideAnySkipRange( textNode, skipRanges ) ) {
@@ -515,6 +516,34 @@
 		return pauseButton;
 	}
 
+	// One persistent button cycling through 4 states, rather than a
+	// separate confirm popover -- matches this file's existing style of a
+	// single element whose label/state changes (see the pause button
+	// above) instead of introducing new hidden/shown DOM structure.
+	function createPiperOptIn() {
+		if ( !mw.config.get( 'wgPageReaderPiperEnabled' ) || !piperCapable() ) {
+			return null;
+		}
+		var optIn = document.createElement( 'button' );
+		optIn.setAttribute( 'type', 'button' );
+		optIn.className = 'pagereader-piper-optin';
+		return optIn;
+	}
+
+	function setPiperOptInState( optIn, state ) {
+		optIn.setAttribute( 'data-pagereader-piper-state', state );
+		optIn.disabled = state === 'downloading';
+		if ( state === 'confirm' ) {
+			optIn.textContent = mw.msg( 'pagereader-piper-optin-confirm' );
+		} else if ( state === 'downloading' ) {
+			optIn.textContent = mw.msg( 'pagereader-piper-downloading' );
+		} else if ( state === 'active' ) {
+			optIn.textContent = mw.msg( 'pagereader-piper-active' );
+		} else {
+			optIn.textContent = mw.msg( 'pagereader-piper-optin-label' );
+		}
+	}
+
 	// Inserted as the button's next siblings (select, label, then the
 	// optional pause button) so a later click handler can find each one via
 	// a bounded walk from the button, without needing to track a separate
@@ -551,6 +580,12 @@
 		fragment.appendChild( select );
 		fragment.appendChild( label );
 
+		var piperOptIn = createPiperOptIn();
+		if ( piperOptIn ) {
+			setPiperOptInState( piperOptIn, readStoredEngine() === 'piper' ? 'active' : 'default' );
+			fragment.appendChild( piperOptIn );
+		}
+
 		var pauseButton = createPauseButton();
 		if ( pauseButton ) {
 			fragment.appendChild( pauseButton );
@@ -580,6 +615,10 @@
 
 	function findPauseButton( button ) {
 		return findFollowingSibling( button, 'pagereader-pause-button' );
+	}
+
+	function findPiperOptIn( button ) {
+		return findFollowingSibling( button, 'pagereader-piper-optin' );
 	}
 
 	function bindButton( button, contentRoot, skipRanges ) {
@@ -613,6 +652,10 @@
 		// speaking utterance still needs its own strong reference. Cleared
 		// in stopSpeaking().
 		var queuedUtterances = null;
+		// Non-null only while a Piper-engine read is active; mirrors
+		// queuedUtterances' role for the native engine (a strong reference
+		// to whatever's currently playing/pausable/cancellable).
+		var piperController = null;
 		// Bumped on every stop/restart; every utterance callback below
 		// captures the generation it was created under and checks it's
 		// still current before doing anything. Guards against a stray
@@ -627,6 +670,7 @@
 			speaking = false;
 			paused = false;
 			queuedUtterances = null;
+			piperController = null;
 			currentHighlight = clearHighlight( currentHighlight );
 			button.textContent = labelIdle;
 			button.classList.remove( 'pagereader-speaking' );
@@ -641,7 +685,11 @@
 		button.addEventListener( 'click', function () {
 			try {
 				if ( speaking ) {
-					window.speechSynthesis.cancel();
+					if ( piperController ) {
+						piperController.cancel();
+					} else {
+						window.speechSynthesis.cancel();
+					}
 					stopSpeaking();
 					return;
 				}
@@ -736,6 +784,130 @@
 						stopSpeaking();
 					};
 					window.speechSynthesis.speak( utterance );
+				}
+
+				// Requests the lazily-loaded Piper module (already cached on
+				// this device after the reader's opt-in -- see
+				// findPiperOptIn()'s click handler above) and speaks with
+				// it, falling back to the native engine entirely on any
+				// failure. Mirrors the native path's speechGeneration guard
+				// so a stale callback from an already-cancelled Piper read
+				// can't resurrect a UI state that's already moved on.
+				// Deliberately does NOT call stopSpeaking() before falling
+				// back on error -- the button must stay in its "speaking"
+				// state while the native fallback is genuinely still
+				// playing, the same way the native engine's own retry
+				// logic above never resets to idle mid-retry either; only
+				// the fallback's own onend/onerror eventually calls
+				// stopSpeaking() when the read is truly over.
+				function speakWithPiper( sentenceList, myGeneration ) {
+					// Guards against fallBackToNative() running twice for the
+					// same read -- the Piper controller's onError and the
+					// mw.loader.using().catch() are two independent failure
+					// paths that could both fire for the same underlying
+					// failure, and without this flag a second call would
+					// double-count the failure and start a second, competing
+					// native read on top of the first.
+					var fallenBack = false;
+					function fallBackToNative() {
+						if ( fallenBack ) {
+							return;
+						}
+						fallenBack = true;
+						// cancel() (not just dropping the reference) stops the
+						// Piper controller's own in-flight audio/synthesis and
+						// sets its internal cancelled flag -- without it, a
+						// sentence already in flight keeps calling
+						// onSentenceStart/onEnd/onError after control has
+						// already moved to the native fallback below, since
+						// fallBackToNative() never bumps speechGeneration and
+						// those callbacks only check myGeneration/speechGeneration
+						// equality, not whether piperController is still theirs.
+						if ( piperController ) {
+							piperController.cancel();
+						}
+						var failures = readPiperFailureCount() + 1;
+						writePiperFailureCount( failures );
+						if ( failures >= 3 ) {
+							writeStoredEngine( 'native' );
+							writePiperFailureCount( 0 );
+							// piperOptIn is found once, synchronously, near the
+							// end of bindButton() -- by the time any click (and
+							// so any read, and so any failure) can happen, it's
+							// already been assigned. Without updating its
+							// visible state here too, the control would keep
+							// showing "active" until the next page load even
+							// though the stored preference (and thus what a
+							// fresh click actually does) has already reverted
+							// to native -- contradicting DEPLOY.md's own smoke
+							// checklist for this exact scenario.
+							if ( piperOptIn ) {
+								setPiperOptInState( piperOptIn, 'default' );
+							}
+						}
+						piperController = null;
+						// Deliberately uses the outer sentences/highlightEnabled
+						// (the same condition the top-level branch above used to
+						// pick speakWithPiper() in the first place), not
+						// sentenceList -- sentenceList is never empty even when
+						// highlighting is off (it's the single whole-article
+						// chunk built above), so checking its length here would
+						// route a highlight-disabled fallback through
+						// speakSentences() and highlight that single "sentence"
+						// (the entire article) anyway, contradicting
+						// highlightEnabled the same way finding 4 did for the
+						// Piper path itself.
+						if ( sentences.length ) {
+							speakSentences( sentences, 0, -1 );
+						} else {
+							speakWholeArticle();
+						}
+					}
+
+					mw.loader.using( 'ext.pageReader.piper' ).then( function () {
+						if ( myGeneration !== speechGeneration ) {
+							return;
+						}
+						piperController = window.pageReaderPiper.speak( sentenceList, {
+							onSentenceStart: function ( sentence ) {
+								if ( myGeneration !== speechGeneration ) {
+									return;
+								}
+								// highlightEnabled already folds together the
+								// site config and the per-page
+								// __NOPAGEREADERHIGHLIGHT__ opt-out (see
+								// Hooks.php) -- when it's off, sentenceList is
+								// the single whole-article chunk built above,
+								// and it must never be highlighted, the same
+								// way speakWholeArticle() never highlights
+								// anything on the native path.
+								if ( !highlightEnabled ) {
+									return;
+								}
+								currentHighlight = clearHighlight( currentHighlight );
+								currentHighlight = highlightChunk(
+									contentRoot, model.skipPredicate, sentence.start, sentence.end - sentence.start
+								);
+							},
+							onEnd: function () {
+								if ( myGeneration === speechGeneration ) {
+									writePiperFailureCount( 0 );
+									stopSpeaking();
+								}
+							},
+							onError: function () {
+								if ( myGeneration !== speechGeneration ) {
+									return;
+								}
+								fallBackToNative();
+							}
+						} );
+					} ).catch( function () {
+						if ( myGeneration !== speechGeneration ) {
+							return;
+						}
+						fallBackToNative();
+					} );
 				}
 
 				// onstart is reliably supported everywhere, unlike
@@ -893,7 +1065,20 @@
 					}
 				}
 
-				if ( sentences.length ) {
+				if ( readStoredEngine() === 'piper' && piperCapable() && mw.config.get( 'wgPageReaderPiperEnabled' ) ) {
+					// Respect wgPageReaderHighlightEnabled (itself already
+					// folded together with the per-page __NOPAGEREADERHIGHLIGHT__
+					// opt-out in Hooks.php) the same way the native path's own
+					// speakWholeArticle()/speakSentences() split does: when
+					// highlighting is off, speak the whole article as a single
+					// chunk with no per-sentence highlight callbacks, rather
+					// than silently re-splitting into sentences regardless of
+					// this config, which would highlight every one of them.
+					var piperSentenceList = highlightEnabled ?
+						sentences :
+						[ { text: model.text, start: 0, end: model.text.length } ];
+					speakWithPiper( piperSentenceList, myGeneration );
+				} else if ( sentences.length ) {
 					speakSentences( sentences, 0, -1 );
 				} else {
 					speakWholeArticle();
@@ -936,16 +1121,67 @@
 						return;
 					}
 					if ( paused ) {
-						window.speechSynthesis.resume();
+						if ( piperController ) {
+							piperController.resume();
+						} else {
+							window.speechSynthesis.resume();
+						}
 						paused = false;
 						pauseButton.textContent = labelPause;
 						pauseButton.setAttribute( 'aria-pressed', 'false' );
 					} else {
-						window.speechSynthesis.pause();
+						if ( piperController ) {
+							piperController.pause();
+						} else {
+							window.speechSynthesis.pause();
+						}
 						paused = true;
 						pauseButton.textContent = labelResume;
 						pauseButton.setAttribute( 'aria-pressed', 'true' );
 					}
+				} catch ( e ) {
+					if ( window.console && console.warn ) {
+						console.warn( 'PageReader failed', e );
+					}
+				}
+			} );
+		}
+
+		var piperOptIn = findPiperOptIn( button );
+		if ( piperOptIn ) {
+			piperOptIn.addEventListener( 'click', function () {
+				try {
+					var state = piperOptIn.getAttribute( 'data-pagereader-piper-state' );
+					if ( state === 'active' ) {
+						writeStoredEngine( 'native' );
+						setPiperOptInState( piperOptIn, 'default' );
+						return;
+					}
+					if ( state === 'default' ) {
+						setPiperOptInState( piperOptIn, 'confirm' );
+						return;
+					}
+					if ( state !== 'confirm' ) {
+						return;
+					}
+					setPiperOptInState( piperOptIn, 'downloading' );
+					mw.loader.using( 'ext.pageReader.piper' ).then( function () {
+						return window.pageReaderPiper.download( function ( progress ) {
+							if ( progress && progress.total ) {
+								piperOptIn.textContent = mw.msg( 'pagereader-piper-downloading' ) +
+									' ' + Math.round( progress.loaded * 100 / progress.total ) + '%';
+							}
+						} );
+					} ).then( function () {
+						writeStoredEngine( 'piper' );
+						writePiperFailureCount( 0 );
+						setPiperOptInState( piperOptIn, 'active' );
+					} ).catch( function () {
+						setPiperOptInState( piperOptIn, 'default' );
+						if ( window.console && console.warn ) {
+							console.warn( 'PageReader: Piper download failed' );
+						}
+					} );
 				} catch ( e ) {
 					if ( window.console && console.warn ) {
 						console.warn( 'PageReader failed', e );

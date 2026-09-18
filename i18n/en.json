@@ -10,5 +10,9 @@
 	"pagereader-voice-female": "Female",
 	"pagereader-voice-male": "Male",
 	"pagereader-pause-label": "Pause reading",
-	"pagereader-pause-label-resume": "Resume reading"
+	"pagereader-pause-label-resume": "Resume reading",
+	"pagereader-piper-optin-label": "Try a better voice",
+	"pagereader-piper-optin-confirm": "Download Amy's voice (~60MB)?",
+	"pagereader-piper-downloading": "Downloading voice…",
+	"pagereader-piper-active": "Using Amy's voice — tap to use default"
 }

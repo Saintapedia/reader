@@ -10,5 +10,9 @@
 	"pagereader-voice-female": "Option in the voice-gender selector: prefer a voice labeled female.",
 	"pagereader-voice-male": "Option in the voice-gender selector: prefer a voice labeled male.",
 	"pagereader-pause-label": "Label on the pause button while speech is in progress and not yet paused.",
-	"pagereader-pause-label-resume": "Label on the pause button while speech is currently paused, to resume it."
+	"pagereader-pause-label-resume": "Label on the pause button while speech is currently paused, to resume it.",
+	"pagereader-piper-optin-label": "Label on the button that lets a reader opt into a higher-quality client-side voice, before they've clicked it.",
+	"pagereader-piper-optin-confirm": "Label shown after the first click on the opt-in button, asking the reader to confirm the ~60MB download by clicking again. {{doc-important|Approximate size of the en_US-amy-medium Piper voice model in megabytes; update if the pinned voice/version changes.}}",
+	"pagereader-piper-downloading": "Label shown on the opt-in button while the voice model is downloading. Progress percentage is appended by JS, not part of this message.",
+	"pagereader-piper-active": "Label on the opt-in button once the reader has opted into the better voice, offering to switch back to the default (native) voice."
 }

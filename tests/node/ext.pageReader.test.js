@@ -44,6 +44,10 @@ function makeMw( configOverrides, msgOverrides ) {
 		'pagereader-voice-male': 'Male',
 		'pagereader-pause-label': 'Pause reading',
 		'pagereader-pause-label-resume': 'Resume reading',
+		'pagereader-piper-optin-label': 'Try a better voice',
+		'pagereader-piper-optin-confirm': "Download Amy's voice (~60MB)?",
+		'pagereader-piper-downloading': 'Downloading voice…',
+		'pagereader-piper-active': "Using Amy's voice — tap to use default",
 	}, msgOverrides || {} );
 	const hooks = {};
 	return {
@@ -100,17 +104,90 @@ function makeSpeechSynthesis( voices, supportsPause ) {
 }
 
 /**
+ * Mocks window.pageReaderPiper the same way makeSpeechSynthesis() mocks
+ * window.speechSynthesis -- this file's real ext.pageReader.piper.js is
+ * never loaded or exercised in these tests (it does a real dynamic
+ * import() of a CDN URL, which jsdom cannot meaningfully fake); instead
+ * these tests mock the CONTRACT ext.pageReader.js's click handler expects
+ * from it, which is where the actual branching/fallback/failure-counting
+ * logic under test lives.
+ */
+function makePiperMock() {
+	const state = { downloadCalls: 0, downloadShouldReject: false, speakCalls: [], lastController: null };
+	const piper = {
+		download: function ( onProgress ) {
+			state.downloadCalls++;
+			if ( state.downloadShouldReject ) {
+				return Promise.reject( new Error( 'simulated download failure' ) );
+			}
+			if ( typeof onProgress === 'function' ) {
+				onProgress( { loaded: 50, total: 100 } );
+				onProgress( { loaded: 100, total: 100 } );
+			}
+			return Promise.resolve();
+		},
+		speak: function ( sentenceList, callbacks ) {
+			const controller = {
+				cancelled: false,
+				paused: false,
+				cancel: function () { controller.cancelled = true; },
+				pause: function () { controller.paused = true; },
+				resume: function () { controller.paused = false; },
+			};
+			state.speakCalls.push( { sentenceList: sentenceList, callbacks: callbacks } );
+			state.lastController = controller;
+			return controller;
+		},
+	};
+	return { piper: piper, state: state };
+}
+
+/**
+ * Installs a mocked window.pageReaderPiper and a window.mw.loader.using()
+ * that resolves immediately (simulating an already-cached module fetch --
+ * real load-failure behavior is exercised separately by resolving to a
+ * rejected promise instead). Call after buildDom(), before dispatching the
+ * click that triggers the mw.loader.using(...).then(...) chain.
+ */
+function installPiperMock( window, loaderShouldReject ) {
+	const { piper, state } = makePiperMock();
+	window.pageReaderPiper = piper;
+	window.mw.loader = {
+		using: function () {
+			return loaderShouldReject ?
+				Promise.reject( new Error( 'simulated module load failure' ) ) :
+				Promise.resolve();
+		},
+	};
+	return state;
+}
+
+/**
+ * Waits for the microtask queue (any pending mw.loader.using(...).then(...)
+ * chain) to fully drain, via a macrotask (setTimeout) rather than a fixed
+ * number of Promise.resolve() hops -- robust regardless of how many .then()
+ * links the real chain under test has.
+ */
+function flushAsync() {
+	return new Promise( function ( resolve ) { setTimeout( resolve, 0 ); } );
+}
+
+/**
  * Loads the real ext.pageReader.js into a fresh jsdom document with the
  * given body HTML and config, and fires the wikipage.content hook once
  * (simulating MediaWiki's normal page-load behavior).
  */
-function buildDom( bodyHtml, configOverrides, msgOverrides, voices, seedLocalStorage, supportsPause, userAgent ) {
+function buildDom( bodyHtml, configOverrides, msgOverrides, voices, seedLocalStorage, supportsPause, userAgent, piperCapableFlag ) {
 	const dom = new JSDOM( '<!doctype html><html><body>' + bodyHtml + '</body></html>', {
 		url: 'https://saintapedia.org/wiki/Kids:Test',
 		runScripts: 'outside-only',
 		resources: userAgent ? { userAgent: userAgent } : undefined,
 	} );
 	const window = dom.window;
+	if ( piperCapableFlag ) {
+		window.WebAssembly = {};
+		window.AudioContext = function () {};
+	}
 	if ( seedLocalStorage ) {
 		Object.keys( seedLocalStorage ).forEach( function ( key ) {
 			window.localStorage.setItem( key, seedLocalStorage[ key ] );
@@ -146,16 +223,38 @@ function buildDom( bodyHtml, configOverrides, msgOverrides, voices, seedLocalSto
 	};
 }
 
+// Test functions may return a Promise (e.g. to await a mocked async
+// Piper download/predict chain) -- since this file is plain CommonJS
+// (no top-level await), such a test's pass/fail is deferred rather than
+// awaited inline here; pendingAsyncTests is drained before the final
+// summary is printed at the bottom of this file.
+const pendingAsyncTests = [];
+
 function test( name, fn ) {
+	var result;
 	try {
-		fn();
-		passed++;
-		console.log( 'PASS: ' + name );
+		result = fn();
 	} catch ( e ) {
 		failed++;
 		failures.push( name + ': ' + e.message );
 		console.log( 'FAIL: ' + name + ' -- ' + e.message );
+		return;
 	}
+	if ( result && typeof result.then === 'function' ) {
+		pendingAsyncTests.push(
+			result.then( function () {
+				passed++;
+				console.log( 'PASS: ' + name );
+			} ).catch( function ( e ) {
+				failed++;
+				failures.push( name + ': ' + e.message );
+				console.log( 'FAIL: ' + name + ' -- ' + e.message );
+			} )
+		);
+		return;
+	}
+	passed++;
+	console.log( 'PASS: ' + name );
 }
 
 test( 'before-content: button + voice controls inserted immediately before marker element', function () {
@@ -250,6 +349,24 @@ test( 'top-of-content: button is first child and is excluded from speech text', 
 	assert.strictEqual(
 		speechState.spoken[ 0 ], 'Story text here.',
 		'voice select/label/pause button text must not leak into speech when they sit inside contentRoot'
+	);
+} );
+
+test( 'top-of-content: Piper opt-in button text is excluded from speech text', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Story text here.</div></div>',
+		{ wgPageReaderButtonPlacement: 'top-of-content', wgPageReaderPiperEnabled: true },
+		null, null, null, null, null, true
+	);
+	const content = window.document.querySelector( '.kids-readaloud' );
+	const optIn = content.querySelector( '.pagereader-piper-optin' );
+	assert.ok( optIn, 'opt-in control should be inserted inside contentRoot for top-of-content placement' );
+
+	content.firstElementChild.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.strictEqual(
+		speechState.spoken[ 0 ], 'Story text here.',
+		"the Piper opt-in control's own label text must not leak into speech when it sits inside contentRoot"
 	);
 } );
 
@@ -901,6 +1018,376 @@ test( 'mw.pageReader.splitIntoSentences behaves identically to the function used
 	assert.strictEqual( sentences.length, 2 );
 	assert.strictEqual( sentences[ 0 ].text, 'One sentence.' );
 	assert.strictEqual( sentences[ 1 ].text, 'Two sentences.' );
+} );
+
+test( 'the Piper opt-in control renders next to the voice select when enabled and capable', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null, null, null, null, true
+	);
+	const optIn = window.document.querySelector( '.pagereader-piper-optin' );
+	assert.ok( optIn, 'opt-in control should exist' );
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'default' );
+	assert.strictEqual( optIn.textContent, 'Try a better voice' );
+} );
+
+test( 'the Piper opt-in control does not render when wgPageReaderPiperEnabled is false', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: false }, null, null, null, null, null, true
+	);
+	assert.strictEqual( window.document.querySelector( '.pagereader-piper-optin' ), null );
+} );
+
+test( 'the Piper opt-in control does not render when the browser lacks WASM/AudioContext', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }
+		// piperCapableFlag omitted -- defaults to jsdom's real lack of AudioContext.
+	);
+	assert.strictEqual( window.document.querySelector( '.pagereader-piper-optin' ), null );
+} );
+
+test( 'the Piper opt-in control shows the active state when the reader already opted in', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const optIn = window.document.querySelector( '.pagereader-piper-optin' );
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'active' );
+	assert.strictEqual( optIn.textContent, "Using Amy's voice — tap to use default" );
+} );
+
+test( 'clicking the Piper opt-in control moves default -> confirm without downloading', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null, null, null, null, true
+	);
+	const state = installPiperMock( window );
+	const optIn = window.document.querySelector( '.pagereader-piper-optin' );
+
+	optIn.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'confirm' );
+	assert.strictEqual( state.downloadCalls, 0, 'the first click must not start a download yet' );
+} );
+
+test( 'confirming the Piper opt-in downloads, then reaches the active state', async function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null, null, null, null, true
+	);
+	const state = installPiperMock( window );
+	const optIn = window.document.querySelector( '.pagereader-piper-optin' );
+
+	optIn.dispatchEvent( new window.Event( 'click', { bubbles: true } ) ); // default -> confirm
+	optIn.dispatchEvent( new window.Event( 'click', { bubbles: true } ) ); // confirm -> downloading
+
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'downloading' );
+
+	// Flush the mw.loader.using()/download() promise chain -- a macrotask
+	// flush (not a fixed number of Promise.resolve() hops) so this doesn't
+	// depend on exactly how many .then() links the real chain has.
+	await flushAsync();
+
+	assert.strictEqual( state.downloadCalls, 1 );
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'active' );
+	assert.strictEqual(
+		window.localStorage.getItem( 'pagereader-engine' ), 'piper',
+		'opting in must persist the engine preference'
+	);
+} );
+
+test( 'a failed download returns the opt-in control to the default state', async function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null, null, null, null, true
+	);
+	const state = installPiperMock( window );
+	state.downloadShouldReject = true;
+	const optIn = window.document.querySelector( '.pagereader-piper-optin' );
+
+	optIn.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	optIn.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await flushAsync();
+
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'default' );
+	assert.strictEqual(
+		window.localStorage.getItem( 'pagereader-engine' ), null,
+		'a failed download must not persist an engine preference'
+	);
+} );
+
+test( 'clicking the Piper opt-in control while active switches back to native', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	installPiperMock( window );
+	const optIn = window.document.querySelector( '.pagereader-piper-optin' );
+
+	optIn.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'default' );
+	assert.strictEqual( window.localStorage.getItem( 'pagereader-engine' ), 'native' );
+} );
+
+test( 'the main button speaks with Piper when opted in, highlighting each sentence via the shared helper', async function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const button = window.document.querySelector( '.pagereader-button' );
+
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await flushAsync();
+
+	assert.strictEqual( state.speakCalls.length, 1 );
+	assert.strictEqual( state.speakCalls[ 0 ].sentenceList.length, 2 );
+	assert.strictEqual( state.speakCalls[ 0 ].sentenceList[ 0 ].text, 'Hello there.' );
+
+	// Simulate the mocked speak()'s onSentenceStart callback firing.
+	state.speakCalls[ 0 ].callbacks.onSentenceStart( state.speakCalls[ 0 ].sentenceList[ 0 ] );
+	const mark = window.document.querySelector( '.pagereader-highlight' );
+	assert.ok( mark, 'onSentenceStart should highlight via the shared mw.pageReader.highlightChunk' );
+	assert.strictEqual( mark.textContent, 'Hello there.' );
+} );
+
+test( 'onEnd from the Piper engine resets the button to idle, same as the native path', async function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await flushAsync();
+	assert.strictEqual( button.textContent, 'Stop reading' );
+
+	state.speakCalls[ 0 ].callbacks.onEnd();
+
+	assert.strictEqual( button.textContent, 'Read this page aloud' );
+	assert.strictEqual( button.getAttribute( 'aria-pressed' ), 'false' );
+} );
+
+test( 'clicking Stop while speaking with Piper cancels the Piper controller, not speechSynthesis', async function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await flushAsync();
+	const cancelCountBefore = speechState.cancelCount;
+
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( state.lastController.cancelled, true );
+	assert.strictEqual(
+		speechState.cancelCount, cancelCountBefore,
+		'native speechSynthesis.cancel() must not be called for a Piper-engine read'
+	);
+	assert.strictEqual( button.textContent, 'Read this page aloud' );
+} );
+
+test( 'pause/resume while speaking with Piper drives the Piper controller, not speechSynthesis', async function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await flushAsync();
+	const pauseButton = window.document.querySelector( '.pagereader-pause-button' );
+
+	pauseButton.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.strictEqual( state.lastController.paused, true );
+	assert.strictEqual( speechState.pauseCount, 0 );
+
+	pauseButton.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.strictEqual( state.lastController.paused, false );
+	assert.strictEqual( speechState.resumeCount, 0 );
+} );
+
+test( 'a Piper onError falls back to the native engine for that read', async function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await flushAsync();
+
+	state.speakCalls[ 0 ].callbacks.onError();
+
+	assert.strictEqual( speechState.spoken.length, 1, 'the native engine must pick up the same read' );
+	assert.strictEqual( window.localStorage.getItem( 'pagereader-piper-failures' ), '1' );
+	assert.strictEqual(
+		window.localStorage.getItem( 'pagereader-engine' ), 'piper',
+		'a single failure must not clear the preference yet'
+	);
+	// Regression check: the button must never flash back to idle while a
+	// same-read native fallback is actually in progress -- calling
+	// stopSpeaking() before handing off to speakSentences() would reset the
+	// button to idle even though audio is now genuinely playing natively,
+	// mirroring the exact class of bug #14 fixed earlier in this project.
+	assert.strictEqual( button.textContent, 'Stop reading', 'must stay in the speaking state during fallback' );
+} );
+
+test( 'a Piper onError firing twice only falls back once and cancels the Piper controller', async function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await flushAsync();
+
+	const controller = state.lastController;
+	state.speakCalls[ 0 ].callbacks.onError();
+	state.speakCalls[ 0 ].callbacks.onError(); // a second, duplicate failure signal for the same read
+
+	assert.strictEqual(
+		controller.cancelled, true,
+		'the Piper controller must be cancelled so it cannot keep firing callbacks in the background'
+	);
+	assert.strictEqual(
+		speechState.spoken.length, 1,
+		'a duplicate onError must not start a second, competing native read'
+	);
+	assert.strictEqual(
+		window.localStorage.getItem( 'pagereader-piper-failures' ), '1',
+		'a duplicate onError must not double-count the failure'
+	);
+} );
+
+test( 'a Piper onError with highlighting disabled falls back via speakWholeArticle, not speakSentences', async function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>',
+		{ wgPageReaderPiperEnabled: true, wgPageReaderHighlightEnabled: false }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const button = window.document.querySelector( '.pagereader-button' );
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await flushAsync();
+
+	state.speakCalls[ 0 ].callbacks.onError();
+
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.strictEqual(
+		speechState.spoken[ 0 ], 'Hello there. Saint today lived well.',
+		'must fall back to speaking the whole article as one utterance, not just the single ' +
+			'Piper chunk (also the whole article) queued as if it were a real sentence'
+	);
+	// speakSentences()'s queueSentence() always assigns utterance.onstart
+	// (for highlighting); speakWholeArticle() never does -- this is the
+	// cheapest reliable way to tell the two paths apart in this mock.
+	// Falling back via speakSentences() here (rather than
+	// speakWholeArticle()) would highlight this one "sentence" -- i.e.
+	// the entire article -- contradicting wgPageReaderHighlightEnabled:
+	// false the same way finding 4 did for the Piper engine itself.
+	assert.strictEqual(
+		typeof speechState.utterances[ 0 ].onstart, 'undefined',
+		'must go through speakWholeArticle(), not speakSentences()'
+	);
+} );
+
+test( 'the 3rd consecutive Piper failure clears the engine preference back to native', async function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const button = window.document.querySelector( '.pagereader-button' );
+	const optIn = window.document.querySelector( '.pagereader-piper-optin' );
+
+	for ( let i = 0; i < 3; i++ ) {
+		button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) ); // start a fresh read
+		await flushAsync();
+		state.speakCalls[ state.speakCalls.length - 1 ].callbacks.onError(); // this attempt fails
+		if ( i < 2 ) {
+			// The button deliberately stays in the "speaking" state during
+			// a same-read native fallback (see speakWithPiper()), so a
+			// reader -- and this test -- must click Stop before the next
+			// click starts a genuinely fresh read; otherwise it would just
+			// stop the in-progress native fallback instead.
+			button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+		}
+	}
+
+	assert.strictEqual( window.localStorage.getItem( 'pagereader-engine' ), 'native' );
+	assert.strictEqual( window.localStorage.getItem( 'pagereader-piper-failures' ), '0' );
+	// Regression check: the stored preference reverting to native is not
+	// enough on its own -- the opt-in control itself must also drop out of
+	// its "active" state, or a reader would see it still claiming to be
+	// using the better voice when a fresh click would actually use native.
+	assert.strictEqual( optIn.getAttribute( 'data-pagereader-piper-state' ), 'default' );
+	assert.strictEqual( optIn.textContent, 'Try a better voice' );
+} );
+
+test( 'the Piper engine speaks the whole article as one chunk with no highlighting when highlightEnabled is false', async function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there. Saint today lived well.</div></div>',
+		{ wgPageReaderPiperEnabled: true, wgPageReaderHighlightEnabled: false }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const button = window.document.querySelector( '.pagereader-button' );
+
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await flushAsync();
+
+	assert.strictEqual( state.speakCalls.length, 1 );
+	assert.strictEqual(
+		state.speakCalls[ 0 ].sentenceList.length, 1,
+		'the whole article must be a single chunk, not re-split into sentences, when highlighting is disabled'
+	);
+	assert.strictEqual(
+		state.speakCalls[ 0 ].sentenceList[ 0 ].text, 'Hello there. Saint today lived well.'
+	);
+
+	// Even if the Piper module fires onSentenceStart for this chunk, it
+	// must not highlight anything -- matching speakWholeArticle()'s own
+	// no-highlighting behavior on the native path for the same config.
+	state.speakCalls[ 0 ].callbacks.onSentenceStart( state.speakCalls[ 0 ].sentenceList[ 0 ] );
+	assert.strictEqual( window.document.querySelectorAll( '.pagereader-highlight' ).length, 0 );
+} );
+
+test( 'a success after failures resets the failure count to 0', async function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const button = window.document.querySelector( '.pagereader-button' );
+
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await flushAsync();
+	state.speakCalls[ 0 ].callbacks.onError();
+	assert.strictEqual( window.localStorage.getItem( 'pagereader-piper-failures' ), '1' );
+
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) ); // stop the native fallback
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) ); // start a fresh (piper) read
+	await flushAsync();
+	state.speakCalls[ 1 ].callbacks.onEnd();
+
+	assert.strictEqual( window.localStorage.getItem( 'pagereader-piper-failures' ), '0' );
 } );
 
 test( "the select's current value, not the site config, wins at speak time", function () {
@@ -1737,8 +2224,10 @@ test( 'a failure inside a sentence onstart highlight never breaks the read-along
 	);
 } );
 
-console.log( '\n' + passed + ' passed, ' + failed + ' failed' );
-if ( failed > 0 ) {
-	console.log( '\nFailures:\n' + failures.join( '\n' ) );
-	process.exit( 1 );
-}
+Promise.all( pendingAsyncTests ).then( function () {
+	console.log( '\n' + passed + ' passed, ' + failed + ' failed' );
+	if ( failed > 0 ) {
+		console.log( '\nFailures:\n' + failures.join( '\n' ) );
+		process.exit( 1 );
+	}
+} );
