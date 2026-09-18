@@ -10,16 +10,19 @@
 ( function () {
 	'use strict';
 
-	// The plain `dist/piper-tts-web.js` build (an earlier version of this
-	// file used it) contains `await import("onnxruntime-web/wasm")` -- a
-	// bare module specifier that only resolves inside a bundler, never in
-	// a browser's native import(). jsdelivr's `+esm` transform rewrites
-	// every such specifier (this package's own and its onnxruntime-web
-	// dependency's) into fully-resolved jsdelivr URLs, producing a build
-	// that's actually loadable via a plain dynamic import() with no
-	// import map. Confirmed by fetching this exact URL and inspecting the
-	// rewritten output directly.
-	var PIPER_CDN_URL = 'https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.5/+esm';
+	// Loaded from our own vendored, patched copy (resources/vendor/piper-tts-web.esm.js),
+	// not the live jsdelivr CDN build -- the unpatched @mintplex-labs/piper-tts-web@1.0.5
+	// +esm build hardcodes a WASM backend path (onnxruntime-web@1.18.0 on cdnjs) that
+	// 404s, so every real synthesis call fails with "no available backend found"
+	// regardless of browser, and this is still true in 1.0.5 (the latest published
+	// version as of this writing). See that file's header comment for the exact
+	// patch applied and how to re-vendor after a deliberate version bump. Served as
+	// a plain static extension asset (not through ResourceLoader's own bundling,
+	// since this needs a real fetchable URL for a runtime import()) via
+	// wgExtensionAssetsPath, the same mechanism MediaWiki uses for any other
+	// extension asset not delivered through ResourceLoader.
+	var PIPER_LIBRARY_URL = mw.config.get( 'wgExtensionAssetsPath' ) +
+		'/PageReader/resources/vendor/piper-tts-web.esm.js';
 	var VOICE_ID = 'en_US-amy-medium';
 
 	var libraryPromise = null;
@@ -38,7 +41,7 @@
 			// false forever, so a reader whose opt-in click failed once
 			// could never successfully retry for the rest of the page's
 			// lifetime, even after the network/CDN recovered.
-			libraryPromise = import( PIPER_CDN_URL ).catch( function ( error ) {
+			libraryPromise = import( PIPER_LIBRARY_URL ).catch( function ( error ) {
 				libraryPromise = null;
 				throw error;
 			} );
