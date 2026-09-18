@@ -106,9 +106,18 @@ Readers can opt into a higher-quality, client-side neural voice
 ("Amy," `en_US-amy-medium` from the open-source [Piper](https://github.com/rhasspy/piper)
 project) via a "Try a better voice" control next to the voice-gender
 select, on any browser with WebAssembly and AudioContext support. The
-voice model (~60MB) downloads once per device, from jsdelivr, and is
-cached by the browser — no text is ever sent to a third party, and
-nothing downloads until the reader explicitly opts in.
+voice model (~60MB) downloads once per device and is cached by the
+browser — no text is ever sent to a third party, and nothing downloads
+until the reader explicitly opts in.
+
+The small `@mintplex-labs/piper-tts-web` wrapper library itself is
+vendored locally at `resources/vendor/piper-tts-web.esm.js` (a
+patched copy — see that file's header comment for why: the unpatched
+jsdelivr build has a broken hardcoded WASM backend path that makes
+every synthesis call fail, regardless of browser). What's still
+fetched from third-party CDNs at runtime: the actual voice model
+(Hugging Face), the ONNX runtime WASM binaries (cdnjs), and the Piper
+phonemizer WASM binary (jsdelivr) — all only after the reader opts in.
 
 `$wgPageReaderPiperEnabled` (default `true`, overridable via
 `MediaWiki:PageReader-config` like everything else) turns this control
