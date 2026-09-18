@@ -78,6 +78,30 @@
 		var cancelled = false;
 		var paused = false;
 		var currentAudio = null;
+		// Index -> in-flight/resolved predict() promise. Without this,
+		// synthesis for a sentence only ever started after the previous
+		// sentence's audio finished playing ('ended'), leaving an audible
+		// gap at every sentence boundary while single-threaded WASM
+		// inference ran with nothing playing. predictSentence() is called
+		// one sentence ahead of playback (see playIndex()) so the next
+		// sentence's audio is usually already synthesized -- or well
+		// underway -- by the time it's needed. Memoized per index so
+		// playIndex()'s own call and its earlier prefetch call for the
+		// same index never trigger two concurrent predict() calls for the
+		// same sentence.
+		var predictions = {};
+
+		function predictSentence( index ) {
+			if ( index >= sentenceList.length ) {
+				return null;
+			}
+			if ( !predictions[ index ] ) {
+				predictions[ index ] = loadLibrary().then( function ( piperTts ) {
+					return piperTts.predict( { text: sentenceList[ index ].text, voiceId: VOICE_ID } );
+				} );
+			}
+			return predictions[ index ];
+		}
 
 		function playCurrentAudio() {
 			currentAudio.play().catch( function ( error ) {
@@ -109,9 +133,10 @@
 				return;
 			}
 			var sentence = sentenceList[ index ];
-			loadLibrary().then( function ( piperTts ) {
-				return piperTts.predict( { text: sentence.text, voiceId: VOICE_ID } );
-			} ).then( function ( wavBlob ) {
+			// Kick off the NEXT sentence's synthesis now, in parallel with
+			// this one -- see predictions' declaration above.
+			predictSentence( index + 1 );
+			predictSentence( index ).then( function ( wavBlob ) {
 				if ( cancelled ) {
 					return;
 				}
