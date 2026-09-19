@@ -494,6 +494,24 @@ test( 'the opt-out default does not read sysop/editor UI chrome living inside th
 	assert.ok( !speechState.spoken[ 0 ].includes( 'patrolled' ) );
 } );
 
+test( 'style element contents are excluded from speech text', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text">' +
+			'<div class="kids-readaloud">' +
+				'<style>.mw-parser-output .kids-readaloud { color: red; }</style>' +
+				'<p>Story text here.</p>' +
+			'</div>' +
+		'</div>'
+	);
+
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( speechState.spoken.length, 1 );
+	assert.strictEqual( speechState.spoken[ 0 ], 'Story text here.' );
+	assert.ok( !speechState.spoken[ 0 ].includes( 'mw-parser-output' ) );
+} );
+
 // Marker elements, not HTML comments -- MediaWiki's parser strips literal
 // wikitext comments from rendered output entirely, so a comment-based
 // marker would never actually reach a real page's DOM (confirmed live).

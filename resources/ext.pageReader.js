@@ -169,12 +169,24 @@
 			'pagereader-pause-button',
 			'pagereader-piper-warning'
 		];
+		// TemplateStyles (and other in-content <style>/<script>) emit
+		// ordinary DOM text nodes that SHOW_TEXT walks; they are never
+		// readable page content.
+		var nonReadableTags = [
+			'STYLE',
+			'SCRIPT',
+			'NOSCRIPT',
+			'TEMPLATE'
+		];
 		return function ( textNode ) {
 			if ( isInsideAnySkipRange( textNode, skipRanges ) ) {
 				return true;
 			}
 			var el = textNode.parentElement;
 			while ( el ) {
+				if ( nonReadableTags.indexOf( el.tagName ) !== -1 ) {
+					return true;
+				}
 				if ( el.classList ) {
 					for ( var c = 0; c < ownControlClasses.length; c++ ) {
 						if ( el.classList.contains( ownControlClasses[ c ] ) ) {
