@@ -12,6 +12,7 @@
 	"pagereader-voice-piper": "Amy (better voice)",
 	"pagereader-pause-label": "Pause reading",
 	"pagereader-pause-label-resume": "Resume reading",
+	"pagereader-piper-loading": "Loading Amy's voice…",
 	"pagereader-piper-warning-text": "Amy's voice sounds more natural, but needs to download about 60MB first. Tap Download to switch to her — until then, \"Read this page aloud\" uses your browser's own voice.",
 	"pagereader-piper-download-button": "Download",
 	"pagereader-piper-downloading": "Downloading voice…"

@@ -45,6 +45,7 @@ function makeMw( configOverrides, msgOverrides ) {
 		'pagereader-voice-piper': 'Amy (better voice)',
 		'pagereader-pause-label': 'Pause reading',
 		'pagereader-pause-label-resume': 'Resume reading',
+		'pagereader-piper-loading': "Loading Amy's voice…",
 		'pagereader-piper-warning-text': "Amy's voice sounds more natural, but needs to download about 60MB first. Tap Download to switch to her — until then, \"Read this page aloud\" uses your browser's own voice.",
 		'pagereader-piper-download-button': 'Download',
 		'pagereader-piper-downloading': 'Downloading voice…',
@@ -1295,6 +1296,12 @@ test( 'onEnd from the Piper engine resets the button to idle, same as the native
 	const button = window.document.querySelector( '.pagereader-button' );
 	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 	await flushAsync();
+	// Amy's warm-up (session init + first inference) hasn't produced any
+	// audio yet at this point -- the button shows a loading label, not
+	// "Stop reading", until onSentenceStart fires for real.
+	assert.strictEqual( button.textContent, "Loading Amy's voice…" );
+
+	state.speakCalls[ 0 ].callbacks.onSentenceStart( { text: 'Text.', start: 0, end: 5 } );
 	assert.strictEqual( button.textContent, 'Stop reading' );
 
 	state.speakCalls[ 0 ].callbacks.onEnd();

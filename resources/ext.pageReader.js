@@ -981,6 +981,29 @@
 				// the fallback's own onend/onerror eventually calls
 				// stopSpeaking() when the read is truly over.
 				function speakWithPiper( sentenceList, myGeneration ) {
+					// Amy's first synthesis on a page load has real WASM
+					// warm-up cost (session init + first inference) --
+					// measured at ~1.5s even on a fast machine, and can run
+					// several seconds longer on a slower device, with
+					// nothing else visibly happening in that window. The
+					// button shows a loading label (see below) instead of
+					// "Stop reading" until this fires once, for real audio
+					// actually starting -- guarded so later sentences
+					// (which don't have this warm-up cost) don't keep
+					// re-running the same DOM writes.
+					var piperAudioStarted = false;
+					function markPiperAudioStarted() {
+						if ( piperAudioStarted ) {
+							return;
+						}
+						piperAudioStarted = true;
+						button.textContent = labelStop;
+						button.classList.add( 'pagereader-speaking' );
+						if ( pauseButton ) {
+							pauseButton.hidden = false;
+						}
+					}
+
 					// Guards against fallBackToNative() running twice for the
 					// same read -- the Piper controller's onError and the
 					// mw.loader.using().catch() are two independent failure
@@ -994,6 +1017,14 @@
 							return;
 						}
 						fallenBack = true;
+						// A failure here can happen before Piper ever
+						// finished its warm-up (see markPiperAudioStarted()
+						// above) -- the button may still be showing the
+						// loading label. This is a no-op if audio already
+						// started; if it didn't, it corrects the button to
+						// the normal speaking state right before the
+						// native fallback actually starts speaking below.
+						markPiperAudioStarted();
 						// cancel() (not just dropping the reference) stops the
 						// Piper controller's own in-flight audio/synthesis and
 						// sets its internal cancelled flag -- without it, a
@@ -1054,6 +1085,12 @@
 								if ( myGeneration !== speechGeneration ) {
 									return;
 								}
+								// Real audio has now actually started --
+								// before highlightEnabled's own early return,
+								// since the button's loading -> speaking
+								// transition applies regardless of whether
+								// highlighting is on.
+								markPiperAudioStarted();
 								// highlightEnabled already folds together the
 								// site config and the per-page
 								// __NOPAGEREADERHIGHLIGHT__ opt-out (see
@@ -1246,7 +1283,10 @@
 					}
 				}
 
-				if ( readStoredEngine() === 'piper' && piperCapable() && mw.config.get( 'wgPageReaderPiperEnabled' ) ) {
+				var usingPiper = readStoredEngine() === 'piper' && piperCapable() &&
+					mw.config.get( 'wgPageReaderPiperEnabled' );
+
+				if ( usingPiper ) {
 					// Respect wgPageReaderHighlightEnabled (itself already
 					// folded together with the per-page __NOPAGEREADERHIGHLIGHT__
 					// opt-out in Hooks.php) the same way the native path's own
@@ -1274,11 +1314,26 @@
 				// "speaking" UI even though playback was already aborted.
 				if ( myGeneration === speechGeneration ) {
 					speaking = true;
-					button.textContent = labelStop;
-					button.classList.add( 'pagereader-speaking' );
 					button.setAttribute( 'aria-pressed', 'true' );
-					if ( pauseButton ) {
-						pauseButton.hidden = false;
+					if ( usingPiper ) {
+						// Real audio hasn't started yet -- speakWithPiper()'s
+						// markPiperAudioStarted() (called from onSentenceStart,
+						// or from fallBackToNative() if Piper fails before
+						// ever getting there) switches this to the normal
+						// "Stop reading" state once it actually has. Showing
+						// "Stop reading" here already, before Amy's WASM
+						// warm-up (session init + first inference, several
+						// seconds on a slower device) has even produced a
+						// sound, would look identical to a native read that's
+						// already playing -- with nothing to explain the
+						// silence.
+						button.textContent = mw.msg( 'pagereader-piper-loading' );
+					} else {
+						button.textContent = labelStop;
+						button.classList.add( 'pagereader-speaking' );
+						if ( pauseButton ) {
+							pauseButton.hidden = false;
+						}
 					}
 				}
 			} catch ( e ) {
