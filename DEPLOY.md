@@ -141,6 +141,30 @@ consistency are **not** covered by `npm test` (jsdom cannot execute
 real WASM or real network fetches) — see the smoke checklist below and
 verify manually in a real browser before trusting a green CI run alone.
 
+## Appearance: full vs. compact
+
+`$wgPageReaderAppearance` (default `"full"`, overridable per-site via
+`MediaWiki:PageReader-config` like everything else) picks between two
+label/spacing presets for the button, voice select, and Piper warning
+box:
+
+- **full** (default): complete option labels ("Female (Chrome
+  voice)", "Auto (browser dependent)", "Amy (better voice)") and the
+  full warning text.
+- **compact**: shorter labels ("Female", "Auto", "Amy") and shorter
+  warning text, plus tighter padding/margin/font-size on the same
+  controls (activated via a `pagereader-appearance-compact` class on
+  the button, reached by CSS sibling selectors — see
+  `resources/ext.pageReader.css`).
+
+Compact mode reduces, but does not eliminate, the risk of a native
+`<select>` popup overflowing a narrow container — some browsers
+(confirmed: Firefox) don't respect CSS `max-width` on a select's open
+options list the same way Chrome does, and there is no fully reliable
+cross-browser CSS fix for a native select's own popup rendering.
+Compact mode's shorter labels make an overflow less likely to occur at
+all, not guaranteed impossible.
+
 ## Content scoping: what gets read
 
 By default (opt-out), PageReader reads the **whole eligible content
@@ -253,6 +277,9 @@ by writing `{{ReadAloudNoHighlight}}` instead of the raw magic word.
 | Pick "Female"/"Male"/"Auto" while Amy is active, then switch back to "Amy (better voice)" | Still switches immediately (no re-download); the native gender choice is remembered underneath |
 | Block `cdn.jsdelivr.net` and click "Read this page aloud" with Amy active | Falls back to the native voice for that read, no broken UI |
 | Force 3 consecutive Piper failures (e.g. with jsdelivr blocked) | Engine preference reverts to native; the select's value reverts to the last native gender choice |
+| Click Read with Amy active but before her audio has actually started | Button shows "Loading Amy's voice…" ("Loading…" in compact appearance) rather than jumping straight to "Stop reading" |
+| Set `$wgPageReaderAppearance = "compact";` (or `{"appearance": "compact"}` on `MediaWiki:PageReader-config`) | Voice select shows "Female"/"Male"/"Auto"/"Amy"; warning box text is shorter; button/select/warning all have visibly tighter spacing |
+| Compact appearance, narrow viewport, open the voice select | Overflow is reduced but not guaranteed eliminated on every browser (confirmed: still possible in Firefox) -- this is a known platform limitation, not a regression to chase further |
 
 ## Accessibility checklist
 

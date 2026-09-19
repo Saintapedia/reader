@@ -40,6 +40,26 @@
 			!!( window.AudioContext || window.webkitAudioContext );
 	}
 
+	// $wgPageReaderAppearance ('full', the default, or 'compact') picks
+	// between two parallel sets of message keys -- 'compact' uses shorter
+	// option labels and warning text, and (via the
+	// pagereader-appearance-compact CSS class added to the button in
+	// insertButton()) tighter spacing, for pages with less room. Does NOT
+	// eliminate the risk of a native <select> popup overflowing a very
+	// narrow container in some browsers (that's a platform limitation,
+	// not something CSS alone can fully fix), only reduce it.
+	function isCompactAppearance() {
+		return mw.config.get( 'wgPageReaderAppearance' ) === 'compact';
+	}
+
+	// Not every message has a '-compact' variant (e.g.
+	// pagereader-piper-download-button, whose "Download" label is already
+	// as short as it needs to be) -- callers for those just use mw.msg()
+	// directly instead of this helper.
+	function appearanceMsg( key ) {
+		return mw.msg( isCompactAppearance() ? key + '-compact' : key );
+	}
+
 	function getSkipSelectors() {
 		var configured = mw.config.get( 'wgPageReaderSkipSelectors' );
 		return Array.isArray( configured ) ? configured : [];
@@ -614,8 +634,8 @@
 		var downloadButton = warning.querySelector( '.pagereader-piper-download-button' );
 		downloadButton.disabled = state === 'downloading';
 		text.textContent = state === 'downloading' ?
-			mw.msg( 'pagereader-piper-downloading' ) :
-			mw.msg( 'pagereader-piper-warning-text' );
+			appearanceMsg( 'pagereader-piper-downloading' ) :
+			appearanceMsg( 'pagereader-piper-warning-text' );
 	}
 
 	// Inserted as the button's next siblings (select, label, warning, then
@@ -634,7 +654,7 @@
 		VOICE_GENDER_VALUES.forEach( function ( value ) {
 			var option = document.createElement( 'option' );
 			option.value = value;
-			option.textContent = mw.msg( 'pagereader-voice-' + value );
+			option.textContent = appearanceMsg( 'pagereader-voice-' + value );
 			select.appendChild( option );
 		} );
 
@@ -647,7 +667,7 @@
 		if ( piperSupported ) {
 			var piperOption = document.createElement( 'option' );
 			piperOption.value = PIPER_VOICE_OPTION_VALUE;
-			piperOption.textContent = mw.msg( 'pagereader-voice-piper' );
+			piperOption.textContent = appearanceMsg( 'pagereader-voice-piper' );
 			select.appendChild( piperOption );
 		}
 
@@ -719,7 +739,7 @@
 					mw.loader.using( 'ext.pageReader.piper' ).then( function () {
 						return window.pageReaderPiper.download( function ( progress ) {
 							if ( progress && progress.total ) {
-								text.textContent = mw.msg( 'pagereader-piper-downloading' ) +
+								text.textContent = appearanceMsg( 'pagereader-piper-downloading' ) +
 									' ' + Math.round( progress.loaded * 100 / progress.total ) + '%';
 							}
 						} );
@@ -1327,7 +1347,7 @@
 						// sound, would look identical to a native read that's
 						// already playing -- with nothing to explain the
 						// silence.
-						button.textContent = mw.msg( 'pagereader-piper-loading' );
+						button.textContent = appearanceMsg( 'pagereader-piper-loading' );
 					} else {
 						button.textContent = labelStop;
 						button.classList.add( 'pagereader-speaking' );
@@ -1536,6 +1556,14 @@
 	function insertButton( content, placement, anchor ) {
 		var button = document.createElement( 'button' );
 		button.className = 'pagereader-button';
+		// CSS uses this (via a sibling selector) to apply compact's tighter
+		// spacing to the select/warning/pause-button too, without needing
+		// to add the class to each of them individually in JS -- see
+		// isCompactAppearance()'s own comment for what 'compact' means
+		// overall.
+		if ( isCompactAppearance() ) {
+			button.classList.add( 'pagereader-appearance-compact' );
+		}
 		button.setAttribute( 'aria-pressed', 'false' );
 
 		if ( anchor ) {

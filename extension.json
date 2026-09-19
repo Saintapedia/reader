@@ -116,9 +116,13 @@
 			"value": true,
 			"description": "Whether the opt-in \"Try a better voice\" client-side Piper voice option is offered. Overridable via MediaWiki:PageReader-config."
 		},
+		"PageReaderAppearance": {
+			"value": "full",
+			"description": "One of: full, compact. 'full' shows the complete voice-gender select (with full option labels like \"Female (Chrome voice)\") and the full Piper opt-in warning text. 'compact' uses shorter option labels and warning text, and tighter spacing, for pages with less room -- it still shows the same voice select, so it does not eliminate the risk of a native <select> popup overflowing a very narrow container in some browsers, only reduce it. Overridable via MediaWiki:PageReader-config."
+		},
 		"PageReaderConfigPage": {
 			"value": "PageReader-config",
-			"description": "MediaWiki:-namespace JSON page (requires editinterface to edit) that can override: namespaces, titlePrefixes, pages, excludedNamespaces, excludedPages, loadEverywhere, contentClass, contentSelector, skipSelectors, buttonPlacement, voicePitch, voiceRate, voiceGender, highlightEnabled, preferredVoices, piperEnabled. PageReaderEnabled, PageReaderActions, PageReaderContentModels, and PageReaderIncludeTalk are LocalSettings-only and cannot be overridden here. Empty string disables the overlay."
+			"description": "MediaWiki:-namespace JSON page (requires editinterface to edit) that can override: namespaces, titlePrefixes, pages, excludedNamespaces, excludedPages, loadEverywhere, contentClass, contentSelector, skipSelectors, buttonPlacement, voicePitch, voiceRate, voiceGender, highlightEnabled, preferredVoices, piperEnabled, appearance. PageReaderEnabled, PageReaderActions, PageReaderContentModels, and PageReaderIncludeTalk are LocalSettings-only and cannot be overridden here. Empty string disables the overlay."
 		}
 	},
 	"ResourceFileModulePaths": {
@@ -134,15 +138,22 @@
 				"pagereader-button-label-stop",
 				"pagereader-voice-label",
 				"pagereader-voice-auto",
+				"pagereader-voice-auto-compact",
 				"pagereader-voice-female",
+				"pagereader-voice-female-compact",
 				"pagereader-voice-male",
+				"pagereader-voice-male-compact",
 				"pagereader-voice-piper",
+				"pagereader-voice-piper-compact",
 				"pagereader-pause-label",
 				"pagereader-pause-label-resume",
 				"pagereader-piper-loading",
+				"pagereader-piper-loading-compact",
 				"pagereader-piper-warning-text",
+				"pagereader-piper-warning-text-compact",
 				"pagereader-piper-download-button",
-				"pagereader-piper-downloading"
+				"pagereader-piper-downloading",
+				"pagereader-piper-downloading-compact"
 			]
 		},
 		"ext.pageReader.piper": {

@@ -204,6 +204,37 @@
 	}
 }
 
+/* Compact appearance ($wgPageReaderAppearance = 'compact') -- tighter
+   spacing on the same controls, activated by adding
+   .pagereader-appearance-compact to the main button (see insertButton()
+   in ext.pageReader.js). The general sibling combinator reaches the
+   select/warning/pause-button that follow it without needing the class
+   added to each of them individually in JS. Tap targets stay at the
+   same 44px accessible minimum as full appearance -- only
+   padding/margin/font-size shrink, never min-height/min-width. */
+.pagereader-button.pagereader-appearance-compact {
+	padding: 0.55em 1.1em;
+	font-size: 0.95em;
+}
+
+.pagereader-button.pagereader-appearance-compact ~ .pagereader-voice-select {
+	margin: 0.3em 0 0.6em 0.4em;
+	padding: 0.3em 0.5em;
+	font-size: 0.9em;
+}
+
+.pagereader-button.pagereader-appearance-compact ~ .pagereader-piper-warning {
+	margin: 0.3em 0 0.6em 0.4em;
+	padding: 0.5em 0.65em;
+	max-width: 220px;
+	font-size: 0.8em;
+}
+
+.pagereader-button.pagereader-appearance-compact ~ .pagereader-pause-button {
+	margin: 0.3em 0 0.6em 0.4em;
+	padding: 0.45em 0.9em;
+}
+
 .pagereader-highlight {
 	background: #F5D98A;
 	/* Explicit, not left to inherit: a skin whose own mark rule sets

@@ -7,13 +7,20 @@
 	"pagereader-button-label-stop": "Stop reading",
 	"pagereader-voice-label": "Voice",
 	"pagereader-voice-auto": "Auto (browser dependent)",
+	"pagereader-voice-auto-compact": "Auto",
 	"pagereader-voice-female": "Female (Chrome voice)",
+	"pagereader-voice-female-compact": "Female",
 	"pagereader-voice-male": "Male (Chrome voice)",
+	"pagereader-voice-male-compact": "Male",
 	"pagereader-voice-piper": "Amy (better voice)",
+	"pagereader-voice-piper-compact": "Amy",
 	"pagereader-pause-label": "Pause reading",
 	"pagereader-pause-label-resume": "Resume reading",
 	"pagereader-piper-loading": "Loading Amy's voice…",
+	"pagereader-piper-loading-compact": "Loading…",
 	"pagereader-piper-warning-text": "Amy's voice sounds more natural, but needs to download about 60MB first. Tap Download to switch to her — until then, \"Read this page aloud\" uses your browser's own voice.",
+	"pagereader-piper-warning-text-compact": "Amy's voice needs a ~60MB download. Until then, Read uses your browser's own voice.",
 	"pagereader-piper-download-button": "Download",
-	"pagereader-piper-downloading": "Downloading voice…"
+	"pagereader-piper-downloading": "Downloading voice…",
+	"pagereader-piper-downloading-compact": "Downloading…"
 }

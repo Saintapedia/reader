@@ -40,15 +40,22 @@ function makeMw( configOverrides, msgOverrides ) {
 		'pagereader-button-label-stop': 'Stop reading',
 		'pagereader-voice-label': 'Voice',
 		'pagereader-voice-auto': 'Auto (browser dependent)',
+		'pagereader-voice-auto-compact': 'Auto',
 		'pagereader-voice-female': 'Female (Chrome voice)',
+		'pagereader-voice-female-compact': 'Female',
 		'pagereader-voice-male': 'Male (Chrome voice)',
+		'pagereader-voice-male-compact': 'Male',
 		'pagereader-voice-piper': 'Amy (better voice)',
+		'pagereader-voice-piper-compact': 'Amy',
 		'pagereader-pause-label': 'Pause reading',
 		'pagereader-pause-label-resume': 'Resume reading',
 		'pagereader-piper-loading': "Loading Amy's voice…",
+		'pagereader-piper-loading-compact': 'Loading…',
 		'pagereader-piper-warning-text': "Amy's voice sounds more natural, but needs to download about 60MB first. Tap Download to switch to her — until then, \"Read this page aloud\" uses your browser's own voice.",
+		'pagereader-piper-warning-text-compact': "Amy's voice needs a ~60MB download. Until then, Read uses your browser's own voice.",
 		'pagereader-piper-download-button': 'Download',
 		'pagereader-piper-downloading': 'Downloading voice…',
+		'pagereader-piper-downloading-compact': 'Downloading…',
 	}, msgOverrides || {} );
 	const hooks = {};
 	return {
@@ -1041,6 +1048,46 @@ test( 'the voice select includes an Amy option when Piper is enabled and capable
 	const options = Array.from( select.options ).map( ( o ) => o.value );
 	assert.deepStrictEqual( options, [ 'female', 'male', 'auto', 'piper-amy' ] );
 	assert.strictEqual( select.options[ 3 ].textContent, 'Amy (better voice)' );
+} );
+
+test( 'wgPageReaderAppearance "compact" uses the shorter option labels and adds the compact class', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true, wgPageReaderAppearance: 'compact' }, null, null, null, null, null, true
+	);
+	const button = window.document.querySelector( '.pagereader-button' );
+	const select = window.document.querySelector( '.pagereader-voice-select' );
+	assert.ok(
+		button.classList.contains( 'pagereader-appearance-compact' ),
+		'the button needs this class for the CSS sibling selectors that style the rest of the controls'
+	);
+	assert.deepStrictEqual(
+		Array.from( select.options ).map( ( o ) => o.textContent ),
+		[ 'Female', 'Male', 'Auto', 'Amy' ]
+	);
+} );
+
+test( 'wgPageReaderAppearance left unset (or "full") uses the full option labels and no compact class', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null, null, null, null, true
+	);
+	const button = window.document.querySelector( '.pagereader-button' );
+	assert.strictEqual( button.classList.contains( 'pagereader-appearance-compact' ), false );
+} );
+
+test( 'compact appearance shows the shorter Piper warning and loading text', async function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true, wgPageReaderAppearance: 'compact' }, null, null,
+		{ 'pagereader-engine': 'piper', 'pagereader-piper-downloaded': '1' }, null, null, true
+	);
+	installPiperMock( window );
+	const button = window.document.querySelector( '.pagereader-button' );
+
+	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	await flushAsync();
+	assert.strictEqual( button.textContent, 'Loading…' );
 } );
 
 test( 'the voice select has no Amy option when wgPageReaderPiperEnabled is false', function () {

@@ -48,6 +48,7 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 			'PageReaderHighlightEnabled' => true,
 			'PageReaderPreferredVoices' => [ 'female' => [ 'Samantha' ], 'male' => [ 'Daniel' ] ],
 			'PageReaderPiperEnabled' => true,
+			'PageReaderAppearance' => 'full',
 			'PageReaderConfigPage' => '',
 		] );
 	}
@@ -100,6 +101,7 @@ class HooksTest extends MediaWikiIntegrationTestCase {
 			$jsVars['wgPageReaderPreferredVoices']
 		);
 		$this->assertTrue( $jsVars['wgPageReaderPiperEnabled'] );
+		$this->assertSame( 'full', $jsVars['wgPageReaderAppearance'] );
 	}
 
 	public function testNonKidsPageDoesNotLoadModule(): void {

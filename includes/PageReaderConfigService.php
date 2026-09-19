@@ -36,7 +36,8 @@ class PageReaderConfigService {
 	 *   voiceGender:string,
 	 *   highlightEnabled:bool,
 	 *   preferredVoices:array{female:array<int,string>,male:array<int,string>},
-	 *   piperEnabled:bool
+	 *   piperEnabled:bool,
+	 *   appearance:string
 	 * }
 	 */
 	public function getEffectiveConfig( Config $mainConfig ): array {
@@ -57,6 +58,7 @@ class PageReaderConfigService {
 			'highlightEnabled' => $mainConfig->get( 'PageReaderHighlightEnabled' ),
 			'preferredVoices' => $mainConfig->get( 'PageReaderPreferredVoices' ),
 			'piperEnabled' => $mainConfig->get( 'PageReaderPiperEnabled' ),
+			'appearance' => $mainConfig->get( 'PageReaderAppearance' ),
 		];
 
 		$overlay = $this->getResolvedOverlay( $mainConfig );
@@ -211,6 +213,18 @@ class PageReaderConfigService {
 			$gender = strtolower( trim( $raw['voiceGender'] ) );
 			if ( in_array( $gender, [ 'auto', 'female', 'male' ], true ) ) {
 				$overlay['voiceGender'] = $gender;
+			}
+		}
+
+		// Same validated-enum treatment as voiceGender above: the client
+		// only recognizes exact lowercase full/compact (see
+		// ext.pageReader.js), so a sysop typo like "Compact" would
+		// otherwise look like it saved successfully while quietly doing
+		// nothing.
+		if ( isset( $raw['appearance'] ) && is_string( $raw['appearance'] ) ) {
+			$appearance = strtolower( trim( $raw['appearance'] ) );
+			if ( in_array( $appearance, [ 'full', 'compact' ], true ) ) {
+				$overlay['appearance'] = $appearance;
 			}
 		}
 
