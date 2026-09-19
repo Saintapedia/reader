@@ -12,7 +12,7 @@
 	"pagereader-voice-piper": "Option in the voice selector: switch to the higher-quality client-side Piper voice (\"Amy\"). Only shown on a WebAssembly/AudioContext-capable browser with the feature enabled.",
 	"pagereader-pause-label": "Label on the pause button while speech is in progress and not yet paused.",
 	"pagereader-pause-label-resume": "Label on the pause button while speech is currently paused, to resume it.",
-	"pagereader-piper-warning-text": "Text shown in the inline warning box under the voice selector when the reader picks the Piper voice option but hasn't downloaded it yet. {{doc-important|Approximate size of the en_US-amy-medium Piper voice model in megabytes; update if the pinned voice/version changes.}}",
+	"pagereader-piper-warning-text": "Text shown in the inline warning box under the voice selector when the reader picks the Piper voice option but hasn't downloaded it yet. Explicitly says which voice the main read-aloud button will actually use in the meantime, since the select showing \"Amy\" otherwise makes it look like clicking read-aloud will already use her. {{doc-important|Approximate size of the en_US-amy-medium Piper voice model in megabytes; update if the pinned voice/version changes.}}",
 	"pagereader-piper-download-button": "Label on the button inside the inline warning box that starts the Piper voice model download.",
 	"pagereader-piper-downloading": "Text shown in the inline warning box while the voice model is downloading. Progress percentage is appended by JS, not part of this message."
 }

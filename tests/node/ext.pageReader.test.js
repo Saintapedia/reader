@@ -45,7 +45,7 @@ function makeMw( configOverrides, msgOverrides ) {
 		'pagereader-voice-piper': 'Amy (better voice)',
 		'pagereader-pause-label': 'Pause reading',
 		'pagereader-pause-label-resume': 'Resume reading',
-		'pagereader-piper-warning-text': "Amy's voice sounds more natural, but needs to download about 60MB first.",
+		'pagereader-piper-warning-text': "Amy's voice sounds more natural, but needs to download about 60MB first. Tap Download to switch to her — until then, \"Read this page aloud\" uses your browser's own voice.",
 		'pagereader-piper-download-button': 'Download',
 		'pagereader-piper-downloading': 'Downloading voice…',
 	}, msgOverrides || {} );
@@ -1086,7 +1086,7 @@ test( 'a first-ever visit recommends Amy by default, with the warning already sh
 	assert.strictEqual( warning.getAttribute( 'data-pagereader-piper-warning-state' ), 'confirm' );
 	assert.strictEqual(
 		warning.querySelector( '.pagereader-piper-warning-text' ).textContent,
-		"Amy's voice sounds more natural, but needs to download about 60MB first."
+		"Amy's voice sounds more natural, but needs to download about 60MB first. Tap Download to switch to her — until then, \"Read this page aloud\" uses your browser's own voice."
 	);
 	assert.strictEqual( state.downloadCalls, 0, 'recommending Amy must not start a download by itself' );
 	assert.strictEqual(
