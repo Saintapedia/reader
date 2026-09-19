@@ -1080,11 +1080,28 @@ test( 'compact appearance shows the shorter Piper warning and loading text', asy
 	const { window } = buildDom(
 		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
 		{ wgPageReaderPiperEnabled: true, wgPageReaderAppearance: 'compact' }, null, null,
-		{ 'pagereader-engine': 'piper', 'pagereader-piper-downloaded': '1' }, null, null, true
+		{ 'pagereader-voice-gender': 'male' }, null, null, true
 	);
 	installPiperMock( window );
+	const select = window.document.querySelector( '.pagereader-voice-select' );
+	const warning = window.document.querySelector( '.pagereader-piper-warning' );
 	const button = window.document.querySelector( '.pagereader-button' );
 
+	select.value = 'piper-amy';
+	select.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
+	assert.strictEqual(
+		warning.querySelector( '.pagereader-piper-warning-text' ).textContent,
+		"Amy's voice needs a ~60MB download. Until then, Read uses your browser's own voice."
+	);
+
+	select.value = 'male';
+	select.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
+	select.value = 'piper-amy';
+	select.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
+	warning.querySelector( '.pagereader-piper-download-button' ).dispatchEvent(
+		new window.Event( 'click', { bubbles: true } )
+	);
+	await flushAsync();
 	button.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
 	await flushAsync();
 	assert.strictEqual( button.textContent, 'Loading…' );
@@ -1117,6 +1134,30 @@ test( 'the voice select defaults to Amy when the reader already opted in', funct
 	);
 	const select = window.document.querySelector( '.pagereader-voice-select' );
 	assert.strictEqual( select.value, 'piper-amy' );
+	assert.strictEqual(
+		window.localStorage.getItem( 'pagereader-piper-downloaded' ), '1',
+		'an existing pagereader-engine=piper reader must be treated as already downloaded'
+	);
+} );
+
+test( 'an existing engine=piper reader can switch away and back without a re-download prompt', function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'piper' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const select = window.document.querySelector( '.pagereader-voice-select' );
+	const warning = window.document.querySelector( '.pagereader-piper-warning' );
+
+	select.value = 'male';
+	select.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
+	select.value = 'piper-amy';
+	select.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
+
+	assert.strictEqual( warning.hidden, true );
+	assert.strictEqual( window.localStorage.getItem( 'pagereader-engine' ), 'piper' );
+	assert.strictEqual( state.downloadCalls, 0 );
 } );
 
 test( 'a first-ever visit recommends Amy by default, with the warning already shown', function () {
@@ -1141,6 +1182,20 @@ test( 'a first-ever visit recommends Amy by default, with the warning already sh
 		window.localStorage.getItem( 'pagereader-engine' ), null,
 		'pre-selecting the option must not itself activate Piper -- only actually downloading does'
 	);
+} );
+
+test( 'a first-ever visit still uses the native engine if the reader clicks Read without downloading', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null, null, null, null, true
+	);
+	const state = installPiperMock( window );
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+
+	assert.strictEqual( state.speakCalls.length, 0, 'Read must not start Piper until Download completes' );
+	assert.ok( speechState.spoken.length >= 1, 'Read must use the native engine instead' );
+	assert.strictEqual( speechState.spoken[ 0 ], 'Hello there.' );
 } );
 
 test( 'a first-ever visit recommends Amy even when the site has configured a non-default gender', function () {
@@ -1241,6 +1296,44 @@ test( 'clicking Download in the warning downloads, then hides the warning and pe
 	assert.strictEqual(
 		window.localStorage.getItem( 'pagereader-piper-downloaded' ), '1',
 		'a successful download must persist the downloaded flag, independent of the engine preference'
+	);
+} );
+
+test( 'switching away during an in-flight download does not reactivate Piper when it completes', async function () {
+	const { window } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Text.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-voice-gender': 'male' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	let finishDownload;
+	window.pageReaderPiper.download = function () {
+		state.downloadCalls++;
+		return new Promise( function ( resolve ) { finishDownload = resolve; } );
+	};
+	const select = window.document.querySelector( '.pagereader-voice-select' );
+	const warning = window.document.querySelector( '.pagereader-piper-warning' );
+
+	select.value = 'piper-amy';
+	select.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
+	warning.querySelector( '.pagereader-piper-download-button' ).dispatchEvent(
+		new window.Event( 'click', { bubbles: true } )
+	);
+	await flushAsync();
+
+	select.value = 'male';
+	select.dispatchEvent( new window.Event( 'change', { bubbles: true } ) );
+	finishDownload();
+	await flushAsync();
+
+	assert.strictEqual( select.value, 'male' );
+	assert.strictEqual(
+		window.localStorage.getItem( 'pagereader-engine' ), 'native',
+		'a download that finishes after the reader switched away must not reactivate Piper'
+	);
+	assert.strictEqual(
+		window.localStorage.getItem( 'pagereader-piper-downloaded' ), '1',
+		'the model is still on the device, so a later Amy pick must not re-prompt'
 	);
 } );
 
@@ -1519,6 +1612,24 @@ test( 'the 3rd consecutive Piper failure clears the engine preference back to na
 	// out of showing "Amy," or a reader would see it still claiming to be
 	// using the better voice when a fresh click would actually use native.
 	assert.strictEqual( select.value, 'female' );
+} );
+
+test( 'a first-visit reader who hit 3 Piper failures is not pre-selected on Amy after reload', function () {
+	const { window, speechState } = buildDom(
+		'<div id="mw-content-text"><div class="kids-readaloud">Hello there.</div></div>',
+		{ wgPageReaderPiperEnabled: true }, null, null,
+		{ 'pagereader-engine': 'native', 'pagereader-piper-downloaded': '1' }, null, null, true
+	);
+	const state = installPiperMock( window );
+	const select = window.document.querySelector( '.pagereader-voice-select' );
+	const warning = window.document.querySelector( '.pagereader-piper-warning' );
+
+	assert.strictEqual( select.value, 'female' );
+	assert.strictEqual( warning.hidden, true );
+	window.document.querySelector( '.pagereader-button' )
+		.dispatchEvent( new window.Event( 'click', { bubbles: true } ) );
+	assert.strictEqual( state.speakCalls.length, 0 );
+	assert.strictEqual( speechState.spoken[ 0 ], 'Hello there.' );
 } );
 
 test( 'the Piper engine speaks the whole article as one chunk with no highlighting when highlightEnabled is false', async function () {

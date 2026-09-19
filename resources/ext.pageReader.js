@@ -601,6 +601,8 @@
 		}
 		var warning = document.createElement( 'div' );
 		warning.className = 'pagereader-piper-warning';
+		warning.id = 'pagereader-piper-warning-' + Math.random().toString( 36 ).slice( 2 );
+		warning.setAttribute( 'aria-live', 'polite' );
 		warning.hidden = true;
 
 		var text = document.createElement( 'span' );
@@ -623,8 +625,15 @@
 	// button was clicked -- shows live progress text (see createControls()'s
 	// download click handler) and disables the button so a reader can't
 	// start a second concurrent download.
-	function setPiperWarningState( warning, state ) {
+	function setPiperWarningState( warning, state, select ) {
 		warning.setAttribute( 'data-pagereader-piper-warning-state', state );
+		if ( select ) {
+			if ( state === 'hidden' ) {
+				select.removeAttribute( 'aria-describedby' );
+			} else {
+				select.setAttribute( 'aria-describedby', warning.id );
+			}
+		}
 		if ( state === 'hidden' ) {
 			warning.hidden = true;
 			return;
@@ -672,17 +681,25 @@
 		}
 
 		var alreadyPiperActive = piperSupported && readStoredEngine() === 'piper';
+		// Upgrade path from the previous "Try a better voice" control,
+		// which only wrote pagereader-engine=piper. Without this, a
+		// returning opted-in reader would be pre-selected on Amy (correct)
+		// but switch-away-and-back would re-prompt for a 60MB download
+		// the model already has.
+		if ( alreadyPiperActive ) {
+			writePiperDownloaded( true );
+		}
 		// Recommends Amy by default, but only for a reader who has never
 		// expressed ANY preference at all -- readStoredGender() returning
 		// null is what distinguishes a genuinely first-ever visit from one
 		// where the reader explicitly picked a native gender in the past
-		// (which must stick, not get silently overridden). Pre-selecting
-		// the option alone would not be enough on its own: without also
-		// showing the warning immediately below, the select would visibly
-		// claim "Amy" while readStoredEngine() is still 'native' --
-		// clicking the main button would then silently speak in the
-		// native voice with no explanation at all.
-		var recommendPiperByDefault = piperSupported && !alreadyPiperActive && readStoredGender() === null;
+		// (which must stick, not get silently overridden). Also skipped
+		// once the model has been downloaded: a first-visit user who then
+		// hit the 3-failure native fallback still has gender=null and
+		// engine=native, and must not be pre-selected on Amy (Read would
+		// keep using native while the dropdown claimed Amy).
+		var recommendPiperByDefault = piperSupported && !alreadyPiperActive &&
+			readStoredGender() === null && !readPiperDownloaded();
 
 		select.value = ( alreadyPiperActive || recommendPiperByDefault ) ?
 			PIPER_VOICE_OPTION_VALUE :
@@ -690,7 +707,7 @@
 
 		var warning = piperSupported ? createPiperWarning() : null;
 		if ( warning && recommendPiperByDefault ) {
-			setPiperWarningState( warning, 'confirm' );
+			setPiperWarningState( warning, 'confirm', select );
 		}
 
 		select.addEventListener( 'change', function () {
@@ -703,10 +720,10 @@
 					// own comment for why this is a separate flag from
 					// ENGINE_STORAGE_KEY).
 					writeStoredEngine( 'piper' );
-					setPiperWarningState( warning, 'hidden' );
+					setPiperWarningState( warning, 'hidden', select );
 					return;
 				}
-				setPiperWarningState( warning, 'confirm' );
+				setPiperWarningState( warning, 'confirm', select );
 				return;
 			}
 			// A real gender value was picked (including switching away
@@ -718,7 +735,7 @@
 			writeStoredGender( select.value );
 			writeStoredEngine( 'native' );
 			if ( warning ) {
-				setPiperWarningState( warning, 'hidden' );
+				setPiperWarningState( warning, 'hidden', select );
 			}
 		} );
 
@@ -731,10 +748,18 @@
 		fragment.appendChild( label );
 
 		if ( warning ) {
+			var piperDownloadGeneration = 0;
+			var piperDownloadInFlight = false;
 			var downloadButton = warning.querySelector( '.pagereader-piper-download-button' );
 			downloadButton.addEventListener( 'click', function () {
 				try {
-					setPiperWarningState( warning, 'downloading' );
+					if ( piperDownloadInFlight ) {
+						setPiperWarningState( warning, 'downloading', select );
+						return;
+					}
+					piperDownloadInFlight = true;
+					var thisDownload = ++piperDownloadGeneration;
+					setPiperWarningState( warning, 'downloading', select );
 					var text = warning.querySelector( '.pagereader-piper-warning-text' );
 					mw.loader.using( 'ext.pageReader.piper' ).then( function () {
 						return window.pageReaderPiper.download( function ( progress ) {
@@ -744,23 +769,39 @@
 							}
 						} );
 					} ).then( function () {
-						writeStoredEngine( 'piper' );
+						piperDownloadInFlight = false;
 						writePiperDownloaded( true );
 						writePiperFailureCount( 0 );
-						setPiperWarningState( warning, 'hidden' );
+						// The reader may have switched to a native gender
+						// while this fetch was in flight -- still record
+						// that the model is on the device, but do not
+						// reactivate Piper under a Female/Male/Auto label.
+						if ( thisDownload !== piperDownloadGeneration ||
+							select.value !== PIPER_VOICE_OPTION_VALUE ) {
+							return;
+						}
+						writeStoredEngine( 'piper' );
+						setPiperWarningState( warning, 'hidden', select );
 					} ).catch( function () {
+						piperDownloadInFlight = false;
+						if ( thisDownload !== piperDownloadGeneration ) {
+							return;
+						}
 						// Download failed -- the select must not keep
 						// showing "Amy" as if the switch had actually
 						// happened, since readStoredEngine() is still
 						// 'native' and a fresh click of the main button
 						// would use the native voice regardless.
-						select.value = defaultGenderValue();
-						setPiperWarningState( warning, 'hidden' );
+						if ( select.value === PIPER_VOICE_OPTION_VALUE ) {
+							select.value = defaultGenderValue();
+						}
+						setPiperWarningState( warning, 'hidden', select );
 						if ( window.console && console.warn ) {
 							console.warn( 'PageReader: Piper download failed' );
 						}
 					} );
 				} catch ( e ) {
+					piperDownloadInFlight = false;
 					if ( window.console && console.warn ) {
 						console.warn( 'PageReader failed', e );
 					}
