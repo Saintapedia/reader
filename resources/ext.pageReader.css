@@ -69,6 +69,14 @@
 
 .pagereader-voice-select {
 	display: inline-block;
+	/* Prevents the closed control (and, in most browsers, the open
+	   options popup) from growing wider than whatever box this sits
+	   inside -- the labels here are sysop/translator-controlled text
+	   ("Female (Chrome voice)" etc.), so there's no fixed length to
+	   design around, and without this a long label pushes the select
+	   past a narrow container's edge. */
+	max-width: 100%;
+	box-sizing: border-box;
 	margin: 0.4em 0 1em 0.5em;
 	padding: 0.4em 0.6em;
 	min-height: 44px;
@@ -132,44 +140,99 @@
 	}
 }
 
-.pagereader-piper-optin {
-	display: inline-block;
+.pagereader-piper-warning {
+	display: block;
+	box-sizing: border-box;
 	margin: 0.4em 0 1em 0.5em;
-	padding: 0.6em 1.1em;
+	padding: 0.6em 0.8em;
+	/* Wider than before (was 220px) -- the warning text now also
+	   explains which voice "Read this page aloud" actually uses in
+	   the meantime, so it needs more room before wrapping gets
+	   cramped. max-width, not width: never wider than its container,
+	   same reasoning as .pagereader-voice-select above. */
+	max-width: 260px;
+	width: 100%;
+	border: 2px solid #152C4A;
+	border-radius: 10px;
+	background: #FDF8EC;
+	color: #152C4A;
+	font-size: 0.85em;
+}
+
+/* Same [hidden]-vs-author-class specificity note as
+   .pagereader-pause-button[hidden] above. */
+.pagereader-piper-warning[hidden] {
+	display: none;
+}
+
+.pagereader-piper-warning-text {
+	display: block;
+	margin-bottom: 0.5em;
+}
+
+.pagereader-piper-download-button {
+	display: inline-block;
+	padding: 0.4em 0.9em;
 	min-height: 44px;
 	min-width: 44px;
 	border: 2px solid #152C4A;
 	border-radius: 999px;
 	background: #FDF8EC;
 	color: #152C4A;
-	font-size: 0.95em;
+	font-size: 0.9em;
 	font-weight: 700;
 	cursor: pointer;
 }
 
-.pagereader-piper-optin:hover {
+.pagereader-piper-download-button:hover {
 	background: #F5EFE0;
 }
 
-.pagereader-piper-optin:focus-visible {
+.pagereader-piper-download-button:focus-visible {
 	outline: 3px solid #1E3A5F;
 	outline-offset: 3px;
 }
 
-.pagereader-piper-optin[data-pagereader-piper-state="downloading"] {
+.pagereader-piper-download-button:disabled {
 	opacity: 0.65;
 	cursor: progress;
 }
 
-.pagereader-piper-optin[data-pagereader-piper-state="active"] {
-	border-color: #A85D1B;
-	color: #A85D1B;
-}
-
 @media print {
-	.pagereader-piper-optin {
+	.pagereader-piper-warning {
 		display: none !important;
 	}
+}
+
+/* Compact appearance ($wgPageReaderAppearance = 'compact') -- tighter
+   spacing on the same controls, activated by adding
+   .pagereader-appearance-compact to the main button (see insertButton()
+   in ext.pageReader.js). The general sibling combinator reaches the
+   select/warning/pause-button that follow it without needing the class
+   added to each of them individually in JS. Tap targets stay at the
+   same 44px accessible minimum as full appearance -- only
+   padding/margin/font-size shrink, never min-height/min-width. */
+.pagereader-button.pagereader-appearance-compact {
+	padding: 0.55em 1.1em;
+	font-size: 0.95em;
+}
+
+.pagereader-button.pagereader-appearance-compact ~ .pagereader-voice-select {
+	margin: 0.3em 0 0.6em 0.4em;
+	padding: 0.3em 0.5em;
+	font-size: 0.9em;
+}
+
+.pagereader-button.pagereader-appearance-compact ~ .pagereader-piper-warning {
+	margin: 0.3em 0 0.6em 0.4em;
+	padding: 0.5em 0.65em;
+	max-width: 220px;
+	font-size: 0.8em;
+}
+
+.pagereader-button.pagereader-appearance-compact ~ .pagereader-pause-button {
+	margin: 0.3em 0 0.6em 0.4em;
+	padding: 0.45em 0.9em;
 }
 
 .pagereader-highlight {

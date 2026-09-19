@@ -37,6 +37,7 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 			'PageReaderHighlightEnabled' => true,
 			'PageReaderPreferredVoices' => [ 'female' => [ 'Samantha' ], 'male' => [ 'Daniel' ] ],
 			'PageReaderPiperEnabled' => true,
+			'PageReaderAppearance' => 'full',
 		] );
 	}
 
@@ -197,6 +198,42 @@ class PageReaderConfigServiceTest extends MediaWikiIntegrationTestCase {
 		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
 
 		$this->assertSame( 'auto', $effective['voiceGender'] );
+	}
+
+	public function testAppearanceOverlayOverridesLocalSettings(): void {
+		$this->baseConfig( [ 'PageReaderAppearance' => 'full' ] );
+		$this->editPage( 'MediaWiki:PageReader-config', '{"appearance": "compact"}' );
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( 'compact', $effective['appearance'] );
+	}
+
+	public function testAppearanceOverlayIsCaseFolded(): void {
+		$this->baseConfig();
+		$this->editPage( 'MediaWiki:PageReader-config', '{"appearance": "Compact"}' );
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( 'compact', $effective['appearance'] );
+	}
+
+	public function testInvalidAppearanceOverlayIsDroppedNotPassedThrough(): void {
+		// The client only recognizes exact full/compact and silently
+		// stays on 'full' behavior for anything else -- an unvalidated
+		// overlay value like "minimal" would look like it saved
+		// successfully on-wiki while quietly doing nothing client-side.
+		// Must fall back to the LocalSettings default here instead of
+		// shipping the bad value.
+		$this->baseConfig( [ 'PageReaderAppearance' => 'full' ] );
+		$this->editPage( 'MediaWiki:PageReader-config', '{"appearance": "minimal"}' );
+		$service = new PageReaderConfigService();
+
+		$effective = $service->getEffectiveConfig( $this->getServiceContainer()->getMainConfig() );
+
+		$this->assertSame( 'full', $effective['appearance'] );
 	}
 
 	public function testHighlightEnabledOverlayOverridesLocalSettings(): void {

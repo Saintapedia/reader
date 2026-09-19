@@ -104,11 +104,20 @@ wanted.
 
 Readers can opt into a higher-quality, client-side neural voice
 ("Amy," `en_US-amy-medium` from the open-source [Piper](https://github.com/rhasspy/piper)
-project) via a "Try a better voice" control next to the voice-gender
-select, on any browser with WebAssembly and AudioContext support. The
-voice model (~60MB) downloads once per device and is cached by the
-browser — no text is ever sent to a third party, and nothing downloads
-until the reader explicitly opts in.
+project) as a 4th option in the same voice select used for
+Female/Male/Auto, on any browser with WebAssembly and AudioContext
+support. A genuinely first-ever visit (no stored gender preference at
+all) recommends Amy by default — she's pre-selected in the dropdown
+with the size-warning box already showing — but this only pre-selects
+the option; nothing downloads or activates until the reader clicks
+Download. A reader who has already picked a native gender in the past
+is never overridden back to Amy. Picking "Amy" any other time shows
+the same inline warning with its own Download button rather than
+downloading immediately; once downloaded, the model (~60MB) is cached
+by the browser and picking "Amy" again — even after switching to a
+native voice in between — switches straight over with no re-prompt.
+No text is ever sent to a third party, and nothing downloads until the
+reader explicitly confirms.
 
 The small `@mintplex-labs/piper-tts-web` wrapper library itself is
 vendored locally at `resources/vendor/piper-tts-web.esm.js` (a
@@ -131,6 +140,30 @@ Real audio quality, download/caching behavior, and cross-browser
 consistency are **not** covered by `npm test` (jsdom cannot execute
 real WASM or real network fetches) — see the smoke checklist below and
 verify manually in a real browser before trusting a green CI run alone.
+
+## Appearance: full vs. compact
+
+`$wgPageReaderAppearance` (default `"full"`, overridable per-site via
+`MediaWiki:PageReader-config` like everything else) picks between two
+label/spacing presets for the button, voice select, and Piper warning
+box:
+
+- **full** (default): complete option labels ("Female (Chrome
+  voice)", "Auto (browser dependent)", "Amy (better voice)") and the
+  full warning text.
+- **compact**: shorter labels ("Female", "Auto", "Amy") and shorter
+  warning text, plus tighter padding/margin/font-size on the same
+  controls (activated via a `pagereader-appearance-compact` class on
+  the button, reached by CSS sibling selectors — see
+  `resources/ext.pageReader.css`).
+
+Compact mode reduces, but does not eliminate, the risk of a native
+`<select>` popup overflowing a narrow container — some browsers
+(confirmed: Firefox) don't respect CSS `max-width` on a select's open
+options list the same way Chrome does, and there is no fully reliable
+cross-browser CSS fix for a native select's own popup rendering.
+Compact mode's shorter labels make an overflow less likely to occur at
+all, not guaranteed impossible.
 
 ## Content scoping: what gets read
 
@@ -232,14 +265,21 @@ by writing `{{ReadAloudNoHighlight}}` instead of the raw magic word.
 | Click the button to start speech (multi-sentence article) | The current sentence highlights as it's spoken, moving sentence-by-sentence |
 | Click "Stop reading" mid-sentence | Speech and highlighting both stop immediately; the next sentence is never spoken |
 | Set `$wgPageReaderHighlightEnabled = false;` | Whole article is spoken as one utterance with no highlighting (kill switch) |
-| On a WASM/AudioContext-capable browser with `$wgPageReaderPiperEnabled` true | The "Try a better voice" control appears next to the voice select |
-| Set `$wgPageReaderPiperEnabled = false;` | The control does not appear |
-| Click "Try a better voice" once | Label changes to a download-size confirmation; nothing downloads yet |
-| Click it again | Downloads Amy's voice model with visible progress, then shows "Using Amy's voice — tap to use default" |
-| Click "Read this page aloud" after opting in | Reads with Amy's voice; sentence highlighting stays in sync |
+| On a WASM/AudioContext-capable browser with `$wgPageReaderPiperEnabled` true | The voice select has a 4th option, "Amy (better voice)" |
+| Set `$wgPageReaderPiperEnabled = false;` | The 4th option does not appear |
+| Load the page with no prior localStorage at all (private window, or clear site data) | The select is pre-selected to "Amy (better voice)" and the size-warning box is already visible; nothing has downloaded yet |
+| Pick "Female"/"Male"/"Auto" first, reload, confirm the choice persisted | The select is not overridden back to Amy on a later visit |
+| Pick "Amy (better voice)" from the select for the first time | An inline warning appears below the select ("about 60MB to download") with a Download button; nothing downloads yet |
+| Click Download | Downloads Amy's voice model with visible progress text, then the warning hides |
+| Click "Read this page aloud" after downloading | Reads with Amy's voice; sentence highlighting stays in sync |
 | Click "Stop reading" / the pause button while using Amy's voice | Both work identically to the native engine |
-| Block `cdn.jsdelivr.net` and click "Read this page aloud" after opting in | Falls back to the native voice for that read, no broken UI |
-| Force 3 consecutive Piper failures (e.g. with jsdelivr blocked) | Engine preference reverts to native; the opt-in control returns to its default (not "active") state |
+| Reload the page and pick "Amy (better voice)" again | Switches immediately with no warning/re-download, since the model is already cached |
+| Pick "Female"/"Male"/"Auto" while Amy is active, then switch back to "Amy (better voice)" | Still switches immediately (no re-download); the native gender choice is remembered underneath |
+| Block `cdn.jsdelivr.net` and click "Read this page aloud" with Amy active | Falls back to the native voice for that read, no broken UI |
+| Force 3 consecutive Piper failures (e.g. with jsdelivr blocked) | Engine preference reverts to native; the select's value reverts to the last native gender choice |
+| Click Read with Amy active but before her audio has actually started | Button shows "Loading Amy's voice…" ("Loading…" in compact appearance) rather than jumping straight to "Stop reading" |
+| Set `$wgPageReaderAppearance = "compact";` (or `{"appearance": "compact"}` on `MediaWiki:PageReader-config`) | Voice select shows "Female"/"Male"/"Auto"/"Amy"; warning box text is shorter; button/select/warning all have visibly tighter spacing |
+| Compact appearance, narrow viewport, open the voice select | Overflow is reduced but not guaranteed eliminated on every browser (confirmed: still possible in Firefox) -- this is a known platform limitation, not a regression to chase further |
 
 ## Accessibility checklist
 
